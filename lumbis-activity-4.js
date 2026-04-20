@@ -1,6 +1,49 @@
 'use strict';
 
 /* ========================================================
+   THEME — dark / light toggle
+======================================================== */
+(function applyTheme() {
+    if (localStorage.getItem('theme') === 'light') {
+        document.body.classList.add('light');
+    }
+})();
+
+/* sync icon once DOM is ready */
+document.addEventListener('DOMContentLoaded', () => {
+    const icon = document.getElementById('theme-icon');
+    if (icon && document.body.classList.contains('light')) {
+        icon.classList.replace('fa-moon', 'fa-sun');
+    }
+});
+
+function toggleTheme() {
+    const isLight = document.body.classList.toggle('light');
+    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    const icon = document.getElementById('theme-icon');
+    if (isLight) {
+        icon.classList.replace('fa-moon', 'fa-sun');
+    } else {
+        icon.classList.replace('fa-sun', 'fa-moon');
+    }
+}
+
+/* ========================================================
+   MOBILE SIDEBAR
+======================================================== */
+function toggleSidebar() {
+    const sb  = document.querySelector('.sidebar');
+    const bd  = document.getElementById('sb-backdrop');
+    const open = sb.classList.toggle('open');
+    bd.classList.toggle('show', open);
+}
+
+function closeSidebar() {
+    document.querySelector('.sidebar').classList.remove('open');
+    document.getElementById('sb-backdrop').classList.remove('show');
+}
+
+/* ========================================================
    DATA  (mirrors the SQL dump)
 ======================================================== */
 const PLAYERS = [
@@ -83,6 +126,15 @@ function go(id) {
     document.querySelectorAll('.auth-screen, .app-screen')
             .forEach(s => s.classList.remove('active'));
     document.getElementById(id).classList.add('active');
+    /* reset recovery form on navigation */
+    if (id !== 's-rec') {
+        const ri = document.getElementById('r-ident');
+        const rr = document.getElementById('rec-result');
+        const re = document.getElementById('rec-err');
+        if (ri) ri.value = '';
+        if (rr) rr.style.display = 'none';
+        if (re) re.style.display = 'none';
+    }
 }
 
 /* ========================================================
@@ -211,7 +263,6 @@ function doSignup() {
     const uname   = document.getElementById('su-user').value.trim();
     const pass    = document.getElementById('su-pass').value;
     const confirm = document.getElementById('su-confirm').value;
-    const terms   = document.getElementById('su-terms').checked;
     const btn     = document.getElementById('su-btn');
 
     if (!month || !day || !year) {
@@ -238,11 +289,6 @@ function doSignup() {
         toast('err', 'Passwords do not match.');
         return;
     }
-    if (!terms) {
-        toast('err', 'You must agree to the Terms of Use to sign up.');
-        return;
-    }
-
     btn.innerHTML = '<span class="spin"></span> Creating account&hellip;';
     btn.disabled  = true;
 
@@ -265,7 +311,6 @@ function doSignup() {
         document.getElementById('su-user').value    = '';
         document.getElementById('su-pass').value    = '';
         document.getElementById('su-confirm').value = '';
-        document.getElementById('su-terms').checked = false;
         document.getElementById('su-str-bar').style.width       = '0';
         document.getElementById('su-str-label').textContent     = 'Strength: \u2014';
         document.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('picked'));
@@ -277,83 +322,19 @@ function doSignup() {
 /* ========================================================
    AUTH — PASSWORD RECOVERY
 ======================================================== */
-function recStep1(resend) {
-    const v = document.getElementById('r-ident').value.trim();
-    if (!v) { toast('err', 'Please enter your username or email.'); return; }
-
-    const masked = v.includes('@')
-        ? v.replace(/(?<=.{2}).(?=.*@)/g, '*')
-        : v[0] + '***' + v.slice(-1);
-    document.getElementById('r-masked').textContent = masked;
-
-    if (!resend) {
-        document.getElementById('rs1').style.display = 'none';
-        document.getElementById('rs2').style.display = 'block';
-        stepDone('sp1', 'sl1', 'sp2');
+function recLookup() {
+    const uname = document.getElementById('r-ident').value.trim();
+    const result = document.getElementById('rec-result');
+    const err    = document.getElementById('rec-err');
+    result.style.display = 'none';
+    err.style.display    = 'none';
+    if (!uname) { toast('err', 'Please enter your username.'); return; }
+    if (ACCOUNTS[uname]) {
+        document.getElementById('rec-pw').textContent = ACCOUNTS[uname];
+        result.style.display = 'flex';
+    } else {
+        err.style.display = 'flex';
     }
-    toast('info', resend ? 'Code resent! Hint: 123456' : 'Code sent! Hint: 123456');
-}
-
-function recStep2() {
-    const code = document.getElementById('r-code').value.trim();
-    if (code !== '123456') { toast('err', 'Wrong code. Hint: 123456'); return; }
-    document.getElementById('rs2').style.display = 'none';
-    document.getElementById('rs3').style.display = 'block';
-    stepDone('sp2', 'sl2', 'sp3');
-}
-
-function recStep3() {
-    const p1 = document.getElementById('r-np').value;
-    const p2 = document.getElementById('r-cp').value;
-    if (p1.length < 8) { toast('err', 'Password must be at least 8 characters.'); return; }
-    if (p1 !== p2)     { toast('err', 'Passwords do not match.'); return; }
-    toast('ok', 'Password reset successfully! You can now log in.');
-    setTimeout(() => { go('s-login'); resetRec(); }, 1600);
-}
-
-function stepDone(curId, lineId, nextId) {
-    const cur  = document.getElementById(curId);
-    const line = document.getElementById(lineId);
-    const next = document.getElementById(nextId);
-    cur.classList.replace('active', 'done');
-    cur.innerHTML = '<i class="fa-solid fa-check" style="font-size:.58rem;"></i>';
-    line.classList.add('done');
-    next.classList.add('active');
-}
-
-function resetRec() {
-    ['rs1', 'rs2', 'rs3'].forEach((id, i) => {
-        document.getElementById(id).style.display = i === 0 ? 'block' : 'none';
-    });
-    ['sp1', 'sp2', 'sp3'].forEach((id, i) => {
-        const el = document.getElementById(id);
-        el.className  = 'step-pill' + (i === 0 ? ' active' : '');
-        el.textContent = i + 1;
-    });
-    ['sl1', 'sl2'].forEach(id => document.getElementById(id).classList.remove('done'));
-    document.getElementById('r-ident').value = '';
-    document.getElementById('r-code').value  = '';
-    document.getElementById('r-np').value    = '';
-    document.getElementById('r-cp').value    = '';
-    document.getElementById('str-bar').style.width       = '0';
-    document.getElementById('str-label').textContent     = 'Strength: \u2014';
-}
-
-/* recovery password strength meter */
-function chkStrength() {
-    const v = document.getElementById('r-np').value;
-    let s = 0;
-    if (v.length >= 8)          s++;
-    if (/[A-Z]/.test(v))        s++;
-    if (/[0-9]/.test(v))        s++;
-    if (/[^a-zA-Z0-9]/.test(v)) s++;
-    const labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
-    const colors = ['', '#e03c31', '#facc15', '#00a2ff', '#22c55e'];
-    const pcts   = ['0%', '25%', '50%', '75%', '100%'];
-    document.getElementById('str-label').textContent = `Strength: ${labels[s] || '\u2014'}`;
-    const bar = document.getElementById('str-bar');
-    bar.style.width      = pcts[s];
-    bar.style.background = colors[s] || 'transparent';
 }
 
 /* ========================================================
@@ -374,6 +355,8 @@ function showPage(pid, navEl) {
     document.getElementById(pid).classList.add('active');
     navEl.classList.add('active');
     document.getElementById('tb-title').textContent = PAGE_TITLES[pid] || '';
+    /* close sidebar on mobile after nav */
+    if (window.innerWidth <= 700) closeSidebar();
 }
 
 /* ========================================================

@@ -107,15 +107,6 @@
                     </button>
                 </div>
             </div>
-            <div class="form-group" style="margin-bottom:20px;">
-                <label class="terms-label">
-                    <input type="checkbox" id="su-terms">
-                    By clicking Sign Up, you agree to our
-                    <a style="color:var(--blue);">Terms of Use</a>
-                    and acknowledge our <a style="color:var(--blue);">Privacy Policy</a>.
-                    If you are under 18, you agree that your parent/guardian permits you to create this account.
-                </label>
-            </div>
             <button class="btn btn-red btn-block" onclick="doSignup()" id="su-btn">
                 <i class="fa-solid fa-user-plus"></i> Sign Up
             </button>
@@ -137,78 +128,25 @@
             <div class="logo-sub">Password Recovery</div>
         </div>
         <div class="auth-card">
-            <!-- step indicators -->
-            <div class="step-row">
-                <div class="step-pill active" id="sp1">1</div>
-                <div class="step-line" id="sl1"></div>
-                <div class="step-pill" id="sp2">2</div>
-                <div class="step-line" id="sl2"></div>
-                <div class="step-pill" id="sp3">3</div>
+            <h2>Forgot Password</h2>
+            <p style="font-size:.8rem;color:var(--text-2);margin:-10px 0 20px;line-height:1.6;text-align:center;">
+                Enter your username and we'll reveal your password.
+            </p>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="r-ident" placeholder="Enter your username" autocomplete="off">
             </div>
-
-            <!-- STEP 1 -->
-            <div id="rs1">
-                <h2>Identify Your Account</h2>
-                <p style="font-size:.8rem;color:var(--text-2);margin:6px 0 20px;line-height:1.6;">
-                    Enter the username or email address linked to your account. We'll send a verification code.
-                </p>
-                <div class="form-group">
-                    <label>Username or Email Address</label>
-                    <input type="text" id="r-ident" placeholder="e.g. admin or admin@rbxgpm.com">
-                </div>
-                <button class="btn btn-blue btn-block" onclick="recStep1()">
-                    <i class="fa-solid fa-paper-plane"></i> Send Verification Code
-                </button>
+            <div class="alert alert-info" id="rec-result" style="display:none;margin-bottom:14px;">
+                <i class="fa-solid fa-key"></i>
+                <span>Your password is: <b id="rec-pw"></b></span>
             </div>
-
-            <!-- STEP 2 -->
-            <div id="rs2" style="display:none">
-                <h2>Enter Verification Code</h2>
-                <div class="alert alert-info" style="margin-top:6px;">
-                    <i class="fa-solid fa-envelope"></i>
-                    <span>A 6-digit code was sent to <b id="r-masked"></b> &mdash; Hint: <b>123456</b></span>
-                </div>
-                <div class="form-group">
-                    <label>6-Digit Code</label>
-                    <input type="text" id="r-code" placeholder="_ _ _ _ _ _" maxlength="6"
-                           style="text-align:center;font-size:1.3rem;letter-spacing:10px;font-weight:700;">
-                </div>
-                <button class="btn btn-blue btn-block" onclick="recStep2()">
-                    <i class="fa-solid fa-shield-halved"></i> Verify Code
-                </button>
-                <p style="text-align:center;margin-top:12px;font-size:.78rem;color:var(--text-3);">
-                    Didn't receive it? <a onclick="recStep1(true)" style="color:var(--blue);cursor:pointer;">Resend</a>
-                </p>
+            <div class="alert alert-err" id="rec-err" style="display:none;margin-bottom:14px;">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                <span>No account found with that username.</span>
             </div>
-
-            <!-- STEP 3 -->
-            <div id="rs3" style="display:none">
-                <h2>Set a New Password</h2>
-                <p style="font-size:.8rem;color:var(--text-2);margin:6px 0 20px;line-height:1.6;">
-                    Choose a strong password. It must be at least 8 characters long.
-                </p>
-                <div class="form-group">
-                    <label>New Password</label>
-                    <div class="field-wrap">
-                        <input type="password" id="r-np" placeholder="At least 8 characters" oninput="chkStrength()">
-                        <i class="fa-solid fa-eye eye" onclick="toggleEye('r-np',this)"></i>
-                    </div>
-                    <div class="strength-wrap">
-                        <div class="strength-label" id="str-label">Strength: —</div>
-                        <div class="strength-track"><div class="strength-fill" id="str-bar"></div></div>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Confirm New Password</label>
-                    <div class="field-wrap">
-                        <input type="password" id="r-cp" placeholder="Repeat the password">
-                        <i class="fa-solid fa-eye eye" onclick="toggleEye('r-cp',this)"></i>
-                    </div>
-                </div>
-                <button class="btn btn-red btn-block" onclick="recStep3()">
-                    <i class="fa-solid fa-lock"></i> Reset Password
-                </button>
-            </div>
+            <button class="btn btn-blue btn-block" onclick="recLookup()">
+                <i class="fa-solid fa-magnifying-glass"></i> Find My Password
+            </button>
         </div>
         <div class="auth-note">
             <a onclick="go('s-login')"><i class="fa-solid fa-arrow-left"></i> Back to Login</a>
@@ -220,6 +158,9 @@
      SCREEN 3: MAIN APPLICATION
 ================================================================ -->
 <div class="app-screen" id="s-app">
+
+    <!-- mobile sidebar backdrop -->
+    <div class="sb-backdrop" id="sb-backdrop" onclick="closeSidebar()"></div>
 
     <!-- ===== SIDEBAR ===== -->
     <aside class="sidebar">
@@ -247,7 +188,7 @@
 
             <div class="sb-label">Reports &amp; Info</div>
             <div class="sb-item" onclick="showPage('p-reports',this)">
-                <i class="fa-solid fa-file-chart-column"></i> Report Generator
+                <i class="fa-solid fa-chart-bar"></i> Report Generator
             </div>
             <div class="sb-item" onclick="showPage('p-about',this)">
                 <i class="fa-solid fa-circle-info"></i> About
@@ -270,12 +211,20 @@
 
         <!-- topbar -->
         <div class="topbar">
-            <div class="topbar-title" id="tb-title">Dashboard</div>
+            <div class="topbar-left">
+                <button class="ham-btn" id="ham-btn" onclick="toggleSidebar()" title="Toggle menu">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div class="topbar-title" id="tb-title">Dashboard</div>
+            </div>
             <div class="topbar-right">
                 <span class="chip chip-green">
                     <i class="fa-solid fa-circle" style="font-size:.42rem;"></i> System Online
                 </span>
                 <span class="chip chip-blue" id="tb-date"></span>
+                <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" title="Toggle theme">
+                    <i class="fa-solid fa-moon" id="theme-icon"></i>
+                </button>
             </div>
         </div>
 
