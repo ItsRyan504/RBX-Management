@@ -1,0 +1,606 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RBXGPM — Game Pass Management System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="lumbis-activity-4.css">
+</head>
+<body>
+
+<!-- ================================================================
+     SCREEN 1: LOGIN
+================================================================ -->
+<div class="auth-screen active" id="s-login">
+    <div class="auth-tiles" id="js-tiles"></div>
+    <div class="auth-overlay"></div>
+    <div class="auth-wrap">
+        <div class="auth-brand">
+            <div class="logo-text">RBX<span>GPM</span></div>
+            <div class="logo-sub">Game Pass Management System</div>
+        </div>
+        <div class="auth-card">
+            <h2>Login to Dashboard</h2>
+            <div class="alert alert-err" id="login-err" style="display:none">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                <span>Invalid username or password.</span>
+            </div>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="l-user" placeholder="Enter your username" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <div class="field-wrap">
+                    <input type="password" id="l-pass" placeholder="Enter your password">
+                    <i class="fa-solid fa-eye eye" id="l-eye"></i>
+                </div>
+            </div>
+            <div class="remember-row">
+                <label><input type="checkbox"> Remember me</label>
+                <a onclick="go('s-rec')">Forgot password?</a>
+            </div>
+            <button class="btn btn-red btn-block" onclick="doLogin()" id="l-btn">
+                <i class="fa-solid fa-right-to-bracket"></i> Log In
+            </button>
+        </div>
+        <div class="auth-note">
+            Don't have an account? <a onclick="go('s-signup')">Sign Up</a><br><small style="color:var(--text-3);font-size:.72rem;">RBXGPM v1.0 &bull; EDP &bull; &copy; 2026</small>
+        </div>
+    </div>
+</div>
+
+
+<!-- ================================================================
+     SCREEN: SIGN UP
+================================================================ -->
+<div class="auth-screen" id="s-signup">
+    <div class="auth-tiles"></div>
+    <div class="auth-overlay"></div>
+    <div class="auth-wrap" style="max-width:480px;">
+        <div class="auth-brand">
+            <div class="logo-text">RBX<span>GPM</span></div>
+            <div class="logo-sub">Create Your Account</div>
+        </div>
+        <div class="auth-card">
+            <h2>Sign Up and Start Managing!</h2>
+            <div class="form-group">
+                <label>Birthday</label>
+                <div class="bday-row">
+                    <select id="su-month"><option value="">Month</option></select>
+                    <select id="su-day"><option value="">Day</option></select>
+                    <select id="su-year"><option value="">Year</option></select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="su-user" placeholder="Don&apos;t use your real name" autocomplete="off" maxlength="20">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <div class="field-wrap">
+                    <input type="password" id="su-pass" placeholder="At least 8 characters" oninput="suStrength()">
+                    <i class="fa-solid fa-eye eye" onclick="toggleEye('su-pass',this)"></i>
+                </div>
+                <div class="strength-wrap">
+                    <div class="strength-label" id="su-str-label">Strength: &mdash;</div>
+                    <div class="strength-track"><div class="strength-fill" id="su-str-bar"></div></div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Confirm Password</label>
+                <div class="field-wrap">
+                    <input type="password" id="su-confirm" placeholder="Repeat your password">
+                    <i class="fa-solid fa-eye eye" onclick="toggleEye('su-confirm',this)"></i>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Gender <span style="color:var(--text-3);font-weight:400;">(optional)</span></label>
+                <div class="gender-row">
+                    <button type="button" class="gender-btn" onclick="pickGender(this)">
+                        <i class="fa-solid fa-mars"></i><span>Male</span>
+                    </button>
+                    <button type="button" class="gender-btn" onclick="pickGender(this)">
+                        <i class="fa-solid fa-venus"></i><span>Female</span>
+                    </button>
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom:20px;">
+                <label class="terms-label">
+                    <input type="checkbox" id="su-terms">
+                    By clicking Sign Up, you agree to our
+                    <a style="color:var(--blue);">Terms of Use</a>
+                    and acknowledge our <a style="color:var(--blue);">Privacy Policy</a>.
+                    If you are under 18, you agree that your parent/guardian permits you to create this account.
+                </label>
+            </div>
+            <button class="btn btn-red btn-block" onclick="doSignup()" id="su-btn">
+                <i class="fa-solid fa-user-plus"></i> Sign Up
+            </button>
+        </div>
+        <div class="auth-note">
+            Already have an account? <a onclick="go('s-login')">Log In</a>
+        </div>
+    </div>
+</div>
+<!-- ================================================================
+     SCREEN 2: PASSWORD RECOVERY
+================================================================ -->
+<div class="auth-screen" id="s-rec">
+    <div class="auth-tiles"></div>
+    <div class="auth-overlay"></div>
+    <div class="auth-wrap">
+        <div class="auth-brand">
+            <div class="logo-text">RBX<span>GPM</span></div>
+            <div class="logo-sub">Password Recovery</div>
+        </div>
+        <div class="auth-card">
+            <!-- step indicators -->
+            <div class="step-row">
+                <div class="step-pill active" id="sp1">1</div>
+                <div class="step-line" id="sl1"></div>
+                <div class="step-pill" id="sp2">2</div>
+                <div class="step-line" id="sl2"></div>
+                <div class="step-pill" id="sp3">3</div>
+            </div>
+
+            <!-- STEP 1 -->
+            <div id="rs1">
+                <h2>Identify Your Account</h2>
+                <p style="font-size:.8rem;color:var(--text-2);margin:6px 0 20px;line-height:1.6;">
+                    Enter the username or email address linked to your account. We'll send a verification code.
+                </p>
+                <div class="form-group">
+                    <label>Username or Email Address</label>
+                    <input type="text" id="r-ident" placeholder="e.g. admin or admin@rbxgpm.com">
+                </div>
+                <button class="btn btn-blue btn-block" onclick="recStep1()">
+                    <i class="fa-solid fa-paper-plane"></i> Send Verification Code
+                </button>
+            </div>
+
+            <!-- STEP 2 -->
+            <div id="rs2" style="display:none">
+                <h2>Enter Verification Code</h2>
+                <div class="alert alert-info" style="margin-top:6px;">
+                    <i class="fa-solid fa-envelope"></i>
+                    <span>A 6-digit code was sent to <b id="r-masked"></b> &mdash; Hint: <b>123456</b></span>
+                </div>
+                <div class="form-group">
+                    <label>6-Digit Code</label>
+                    <input type="text" id="r-code" placeholder="_ _ _ _ _ _" maxlength="6"
+                           style="text-align:center;font-size:1.3rem;letter-spacing:10px;font-weight:700;">
+                </div>
+                <button class="btn btn-blue btn-block" onclick="recStep2()">
+                    <i class="fa-solid fa-shield-halved"></i> Verify Code
+                </button>
+                <p style="text-align:center;margin-top:12px;font-size:.78rem;color:var(--text-3);">
+                    Didn't receive it? <a onclick="recStep1(true)" style="color:var(--blue);cursor:pointer;">Resend</a>
+                </p>
+            </div>
+
+            <!-- STEP 3 -->
+            <div id="rs3" style="display:none">
+                <h2>Set a New Password</h2>
+                <p style="font-size:.8rem;color:var(--text-2);margin:6px 0 20px;line-height:1.6;">
+                    Choose a strong password. It must be at least 8 characters long.
+                </p>
+                <div class="form-group">
+                    <label>New Password</label>
+                    <div class="field-wrap">
+                        <input type="password" id="r-np" placeholder="At least 8 characters" oninput="chkStrength()">
+                        <i class="fa-solid fa-eye eye" onclick="toggleEye('r-np',this)"></i>
+                    </div>
+                    <div class="strength-wrap">
+                        <div class="strength-label" id="str-label">Strength: —</div>
+                        <div class="strength-track"><div class="strength-fill" id="str-bar"></div></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Confirm New Password</label>
+                    <div class="field-wrap">
+                        <input type="password" id="r-cp" placeholder="Repeat the password">
+                        <i class="fa-solid fa-eye eye" onclick="toggleEye('r-cp',this)"></i>
+                    </div>
+                </div>
+                <button class="btn btn-red btn-block" onclick="recStep3()">
+                    <i class="fa-solid fa-lock"></i> Reset Password
+                </button>
+            </div>
+        </div>
+        <div class="auth-note">
+            <a onclick="go('s-login')"><i class="fa-solid fa-arrow-left"></i> Back to Login</a>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     SCREEN 3: MAIN APPLICATION
+================================================================ -->
+<div class="app-screen" id="s-app">
+
+    <!-- ===== SIDEBAR ===== -->
+    <aside class="sidebar">
+        <div class="sb-brand">
+            <div class="b-logo">RBX<span>GPM</span></div>
+            <div class="b-sub">Admin Panel</div>
+        </div>
+        <nav class="sb-nav">
+            <div class="sb-label">Main</div>
+            <div class="sb-item active" onclick="showPage('p-dash',this)">
+                <i class="fa-solid fa-chart-pie"></i> Dashboard
+            </div>
+
+            <div class="sb-label">Management</div>
+            <div class="sb-item" onclick="showPage('p-players',this)">
+                <i class="fa-solid fa-users"></i> Players
+            </div>
+            <div class="sb-item" onclick="showPage('p-gamepasses',this)">
+                <i class="fa-solid fa-ticket"></i> Game Passes
+            </div>
+            <div class="sb-item" onclick="showPage('p-audit',this)">
+                <i class="fa-solid fa-clock-rotate-left"></i> Audit Log
+                <span class="sb-badge">4</span>
+            </div>
+
+            <div class="sb-label">Reports &amp; Info</div>
+            <div class="sb-item" onclick="showPage('p-reports',this)">
+                <i class="fa-solid fa-file-chart-column"></i> Report Generator
+            </div>
+            <div class="sb-item" onclick="showPage('p-about',this)">
+                <i class="fa-solid fa-circle-info"></i> About
+            </div>
+        </nav>
+        <div class="sb-user">
+            <div class="sb-avatar" id="sb-av">A</div>
+            <div class="sb-uinfo">
+                <div class="sb-uname" id="sb-uname">Admin</div>
+                <div class="sb-urole">Super Administrator</div>
+            </div>
+            <button class="sb-logout" onclick="doLogout()" title="Log out">
+                <i class="fa-solid fa-right-from-bracket"></i>
+            </button>
+        </div>
+    </aside>
+
+    <!-- ===== MAIN ===== -->
+    <main class="main">
+
+        <!-- topbar -->
+        <div class="topbar">
+            <div class="topbar-title" id="tb-title">Dashboard</div>
+            <div class="topbar-right">
+                <span class="chip chip-green">
+                    <i class="fa-solid fa-circle" style="font-size:.42rem;"></i> System Online
+                </span>
+                <span class="chip chip-blue" id="tb-date"></span>
+            </div>
+        </div>
+
+        <!-- =================== DASHBOARD =================== -->
+        <div class="page active" id="p-dash">
+            <div class="page-header">
+                <h2>Overview</h2>
+                <p>At-a-glance summary of the game pass management system.</p>
+            </div>
+
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-icon si-blue"><i class="fa-solid fa-users"></i></div>
+                    <div class="stat-info">
+                        <div class="si-label">Total Players</div>
+                        <div class="si-val">10</div>
+                        <div class="si-sub">All registered accounts</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon si-green"><i class="fa-solid fa-user-check"></i></div>
+                    <div class="stat-info">
+                        <div class="si-label">Active Players</div>
+                        <div class="si-val">9</div>
+                        <div class="si-sub">90% activity rate</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon si-red"><i class="fa-solid fa-ban"></i></div>
+                    <div class="stat-info">
+                        <div class="si-label">Banned</div>
+                        <div class="si-val">1</div>
+                        <div class="si-sub">CloudCrate</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon si-yellow"><i class="fa-solid fa-ticket"></i></div>
+                    <div class="stat-info">
+                        <div class="si-label">Game Passes</div>
+                        <div class="si-val">10</div>
+                        <div class="si-sub">9 currently on sale</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon si-purple"><i class="fa-solid fa-coins"></i></div>
+                    <div class="stat-info">
+                        <div class="si-label">Total Revenue</div>
+                        <div class="si-val">R$1,652</div>
+                        <div class="si-sub">From active purchases</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="g2">
+                <!-- Recent transactions -->
+                <div class="card">
+                    <div class="card-head">
+                        <h3><i class="fa-solid fa-receipt" style="color:var(--red);"></i> Recent Transactions</h3>
+                        <span class="chip chip-blue">10 records</span>
+                    </div>
+                    <div class="tbl-wrap">
+                        <table>
+                            <thead><tr>
+                                <th>Player</th><th>Pass</th><th>Source</th><th>Status</th>
+                            </tr></thead>
+                            <tbody id="tb-tx"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Price breakdown -->
+                <div class="card">
+                    <div class="card-head">
+                        <h3><i class="fa-solid fa-chart-bar" style="color:var(--blue);"></i> Pass Price Breakdown</h3>
+                    </div>
+                    <div class="card-body" id="price-bars"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- =================== PLAYERS =================== -->
+        <div class="page" id="p-players">
+            <div class="page-header">
+                <h2>Players</h2>
+                <p>Manage all registered player accounts in the system.</p>
+            </div>
+            <div class="card">
+                <div class="card-head">
+                    <h3>Player Registry</h3>
+                    <div class="act-right">
+                        <div class="search-wrap">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="pl-search" placeholder="Search players…" oninput="filterPlayers()">
+                        </div>
+                        <button class="btn btn-red" onclick="openModal('m-addplayer')" style="padding:8px 14px;font-size:.78rem;">
+                            <i class="fa-solid fa-plus"></i> Add Player
+                        </button>
+                    </div>
+                </div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead><tr>
+                            <th>#</th><th>Username</th><th>Join Date</th>
+                            <th>Status</th><th>Passes Owned</th><th>Actions</th>
+                        </tr></thead>
+                        <tbody id="tb-players"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- =================== GAME PASSES =================== -->
+        <div class="page" id="p-gamepasses">
+            <div class="page-header">
+                <h2>Game Passes</h2>
+                <p>View the complete catalog of available game passes and their benefits.</p>
+            </div>
+            <div class="card">
+                <div class="card-head">
+                    <h3>Pass Catalog</h3>
+                    <div class="search-wrap">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="gp-search" placeholder="Search passes…" oninput="filterGP()">
+                    </div>
+                </div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead><tr>
+                            <th>#</th><th>Pass Name</th><th>Description</th>
+                            <th>Price (R$)</th><th>Benefit</th><th>Sale</th>
+                        </tr></thead>
+                        <tbody id="tb-gp"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- =================== AUDIT LOG =================== -->
+        <div class="page" id="p-audit">
+            <div class="page-header">
+                <h2>Audit Log</h2>
+                <p>Complete change history for all player game pass records.</p>
+            </div>
+            <div class="card">
+                <div class="card-head">
+                    <h3>Change History</h3>
+                    <span class="chip chip-blue">4 records</span>
+                </div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead><tr>
+                            <th>ID</th><th>Action</th><th>Player</th><th>Pass</th>
+                            <th>Old Source</th><th>New Source</th>
+                            <th>Old Status</th><th>New Status</th><th>Timestamp</th>
+                        </tr></thead>
+                        <tbody id="tb-audit"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- =================== REPORT GENERATOR =================== -->
+        <div class="page" id="p-reports">
+            <div class="page-header">
+                <h2>Report Generator</h2>
+                <p>Select a report type, generate, and print or export.</p>
+            </div>
+
+            <div class="card" style="margin-bottom:18px;">
+                <div class="card-head"><h3>Select Report Type</h3></div>
+                <div class="card-body">
+                    <div class="report-types">
+                        <div class="rtype sel" onclick="pickReport(this,'player-summary')">
+                            <i class="fa-solid fa-users" style="color:var(--blue);"></i>
+                            <h4>Player Summary</h4>
+                            <p>All players with status and owned passes</p>
+                        </div>
+                        <div class="rtype" onclick="pickReport(this,'revenue')">
+                            <i class="fa-solid fa-coins" style="color:var(--yellow);"></i>
+                            <h4>Revenue Report</h4>
+                            <p>Pass pricing and purchase revenue</p>
+                        </div>
+                        <div class="rtype" onclick="pickReport(this,'ownership')">
+                            <i class="fa-solid fa-ticket" style="color:var(--red);"></i>
+                            <h4>Pass Ownership</h4>
+                            <p>Who owns which passes and how they got them</p>
+                        </div>
+                        <div class="rtype" onclick="pickReport(this,'audit')">
+                            <i class="fa-solid fa-clock-rotate-left" style="color:var(--green);"></i>
+                            <h4>Audit Report</h4>
+                            <p>Full record of all data change events</p>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                        <button class="btn btn-red" onclick="genReport()" style="width:auto;">
+                            <i class="fa-solid fa-file-circle-plus"></i> Generate Report
+                        </button>
+                        <button class="btn btn-ghost" onclick="printReport()" style="width:auto;">
+                            <i class="fa-solid fa-print"></i> Print / Export
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" id="rpt-out" style="display:none;">
+                <div class="card-head">
+                    <h3 id="rpt-title">Report</h3>
+                    <span class="chip chip-green" id="rpt-ts"></span>
+                </div>
+                <div id="rpt-body" class="tbl-wrap"></div>
+            </div>
+        </div>
+
+        <!-- =================== ABOUT =================== -->
+        <div class="page" id="p-about">
+            <div class="about-hero">
+                <div class="hero-logo">RBX<span>GPM</span></div>
+                <p>A web-based Information System for administering Roblox game pass data &mdash; players, purchases, benefits, and change audit trails.</p>
+                <div class="ver"><i class="fa-solid fa-tag"></i> Version 1.0.0 &bull; April 2026</div>
+            </div>
+            <div class="about-grid">
+                <div class="about-card">
+                    <h4><i class="fa-solid fa-circle-info"></i> About This System</h4>
+                    <p>RBXGPM is a game pass administration panel developed as part of the <b>Enterprise Development &amp; Programming (EDP)</b> course (Activities 4 &amp; 5). It provides a centralized interface for monitoring players, managing passes, and generating detailed reports.</p>
+                </div>
+                <div class="about-card">
+                    <h4><i class="fa-solid fa-layer-group"></i> System Modules</h4>
+                    <ul>
+                        <li>Login &amp; Authentication</li>
+                        <li>Password Recovery (3-step flow)</li>
+                        <li>Dashboard &amp; Statistics Overview</li>
+                        <li>Player Registry Management</li>
+                        <li>Game Pass Catalog Viewer</li>
+                        <li>Audit Log &amp; Change History</li>
+                        <li>Report Generator &amp; Printer</li>
+                    </ul>
+                </div>
+                <div class="about-card">
+                    <h4><i class="fa-solid fa-database"></i> Database Schema</h4>
+                    <ul>
+                        <li><b>players</b> &mdash; registered accounts</li>
+                        <li><b>gamepasses</b> &mdash; available passes</li>
+                        <li><b>benefit_types</b> &mdash; benefit definitions</li>
+                        <li><b>gamepass_benefits</b> &mdash; pass-to-benefit map</li>
+                        <li><b>player_gamepasses</b> &mdash; ownership records</li>
+                        <li><b>player_gamepasses_audit</b> &mdash; change log</li>
+                    </ul>
+                </div>
+                <div class="about-card">
+                    <h4><i class="fa-solid fa-code"></i> Technology Stack</h4>
+                    <div>
+                        <span class="tech-pill">HTML5</span>
+                        <span class="tech-pill">CSS3</span>
+                        <span class="tech-pill">JavaScript (ES6)</span>
+                        <span class="tech-pill">MySQL / MariaDB</span>
+                        <span class="tech-pill">phpMyAdmin</span>
+                        <span class="tech-pill">Font Awesome 6</span>
+                        <span class="tech-pill">Google Fonts</span>
+                    </div>
+                    <hr class="div" style="margin:14px 0 10px;">
+                    <p style="font-size:.76rem;">Front-end: Pure HTML/CSS/JS &bull; Back-end: PHP + MariaDB (planned)</p>
+                </div>
+                <div class="about-card">
+                    <h4><i class="fa-solid fa-graduation-cap"></i> Academic Details</h4>
+                    <p><b>Course:</b> Enterprise Development &amp; Programming (EDP)</p>
+                    <p style="margin-top:7px;"><b>Activities:</b> 4 &amp; 5 &mdash; UI / Front-end Design</p>
+                    <p style="margin-top:7px;"><b>Academic Year:</b> 2025 &ndash; 2026</p>
+                    <p style="margin-top:7px;"><b>Student:</b> Lumbis</p>
+                    <p style="margin-top:7px;"><b>Date Submitted:</b> April 20, 2026</p>
+                </div>
+                <div class="about-card">
+                    <h4><i class="fa-solid fa-shield-halved"></i> Key Features</h4>
+                    <ul>
+                        <li>Credential-based login with validation</li>
+                        <li>3-step password recovery with OTP</li>
+                        <li>Live player &amp; pass search filtering</li>
+                        <li>One-click ban / unban players</li>
+                        <li>Add new players via modal form</li>
+                        <li>4 report types with print support</li>
+                        <li>Full audit trail display</li>
+                        <li>Dark Roblox-inspired UI theme</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</div><!-- /app -->
+
+<!-- ================================================================
+     MODAL: ADD PLAYER
+================================================================ -->
+<div class="modal-bg" id="m-addplayer">
+    <div class="modal">
+        <div class="modal-head">
+            <h3><i class="fa-solid fa-user-plus" style="color:var(--blue);"></i> Add New Player</h3>
+            <button class="modal-close" onclick="closeModal('m-addplayer')"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="ap-name" placeholder="e.g. StarHunter88">
+        </div>
+        <div class="form-group">
+            <label>Join Date</label>
+            <input type="date" id="ap-date">
+        </div>
+        <div class="form-group">
+            <label>Status</label>
+            <select id="ap-status">
+                <option value="active">Active</option>
+                <option value="banned">Banned</option>
+            </select>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn-ghost" onclick="closeModal('m-addplayer')">Cancel</button>
+            <button class="btn btn-blue" onclick="addPlayer()">Add Player</button>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     TOAST CONTAINER
+================================================================ -->
+<div id="toast-box"></div>
+
+<script src="lumbis-activity-4.js"></script>
+</body>
+</html>
