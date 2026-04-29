@@ -18,8 +18,11 @@ SET time_zone = "+00:00";
 /*!40101 SET NAMES utf8mb4 */;
 
 --
--- Database: `lumbis-activity-2`
+-- Database: `roblox_tracker`
 --
+
+CREATE DATABASE IF NOT EXISTS `roblox_tracker` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+USE `roblox_tracker`;
 
 DELIMITER $$
 --
@@ -253,6 +256,40 @@ INSERT INTO `player_gamepasses_audit` (`audit_id`, `action_type`, `pid`, `gpid`,
 (2, 'UPDATE', 1, 4, 'purchase', 'purchase', 1, 0, '2026-03-11 13:30:42'),
 (3, 'UPDATE', 1, 4, 'purchase', 'gifting', 0, 0, '2026-03-11 13:31:26'),
 (4, 'DELETE', 1, 4, 'gifting', NULL, 0, NULL, '2026-03-11 13:32:13');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `accounts`
+--
+
+CREATE TABLE IF NOT EXISTS `accounts` (
+  `uid` int(11) NOT NULL AUTO_INCREMENT,
+  `username` varchar(50) NOT NULL,
+  `password_hash` varchar(255) NOT NULL,
+  `full_name` varchar(100) DEFAULT NULL,
+  `email` varchar(120) DEFAULT NULL,
+  `birthday` date DEFAULT NULL,
+  `gender` varchar(20) DEFAULT NULL,
+  `role` varchar(20) NOT NULL DEFAULT 'user',
+  `status` varchar(20) NOT NULL DEFAULT 'active',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`uid`),
+  UNIQUE KEY `username` (`username`),
+  UNIQUE KEY `email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `accounts`
+-- Default logins:
+-- admin / admin123
+-- root / root
+--
+
+INSERT IGNORE INTO `accounts` (`uid`, `username`, `password_hash`, `full_name`, `email`, `birthday`, `gender`, `role`, `status`, `created_at`, `updated_at`) VALUES
+(1, 'admin', '$2y$10$SCZCxQKxAMn2KgNAOkUIsOOk1gD0xXykmWkHETg1dBmu0PxoUQumW', 'System Administrator', 'admin@rbxgpm.local', NULL, NULL, 'admin', 'active', current_timestamp(), current_timestamp()),
+(2, 'root', '$2y$10$L6e87xonS41zb59U5tV7SOLpSXTlxPl8TZu0qG2Jiw1DjFtF6/Wry', 'Root Account', 'root@rbxgpm.local', NULL, NULL, 'admin', 'active', current_timestamp(), current_timestamp());
 
 -- --------------------------------------------------------
 

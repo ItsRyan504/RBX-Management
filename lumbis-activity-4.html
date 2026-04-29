@@ -130,22 +130,36 @@
         <div class="auth-card">
             <h2>Forgot Password</h2>
             <p style="font-size:.8rem;color:var(--text-2);margin:-10px 0 20px;line-height:1.6;text-align:center;">
-                Enter your username and we'll reveal your password.
+                Enter your username and set a new password.
             </p>
             <div class="form-group">
                 <label>Username</label>
                 <input type="text" id="r-ident" placeholder="Enter your username" autocomplete="off">
             </div>
+            <div class="form-group">
+                <label>New Password</label>
+                <div class="field-wrap">
+                    <input type="password" id="r-pass" placeholder="At least 8 characters">
+                    <i class="fa-solid fa-eye eye" onclick="toggleEye('r-pass',this)"></i>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Confirm New Password</label>
+                <div class="field-wrap">
+                    <input type="password" id="r-confirm" placeholder="Repeat your new password">
+                    <i class="fa-solid fa-eye eye" onclick="toggleEye('r-confirm',this)"></i>
+                </div>
+            </div>
             <div class="alert alert-info" id="rec-result" style="display:none;margin-bottom:14px;">
                 <i class="fa-solid fa-key"></i>
-                <span>Your password is: <b id="rec-pw"></b></span>
+                <span id="rec-msg">Password updated. You can now log in.</span>
             </div>
             <div class="alert alert-err" id="rec-err" style="display:none;margin-bottom:14px;">
                 <i class="fa-solid fa-circle-exclamation"></i>
-                <span>No account found with that username.</span>
+                <span id="rec-err-msg">No account found with that username.</span>
             </div>
             <button class="btn btn-blue btn-block" onclick="recLookup()">
-                <i class="fa-solid fa-magnifying-glass"></i> Find My Password
+                <i class="fa-solid fa-key"></i> Reset Password
             </button>
         </div>
         <div class="auth-note">
@@ -175,6 +189,9 @@
             </div>
 
             <div class="sb-label">Management</div>
+            <div class="sb-item" onclick="showPage('p-accounts',this)">
+                <i class="fa-solid fa-user-gear"></i> Accounts
+            </div>
             <div class="sb-item" onclick="showPage('p-players',this)">
                 <i class="fa-solid fa-users"></i> Players
             </div>
@@ -301,6 +318,37 @@
                         <h3><i class="fa-solid fa-chart-bar" style="color:var(--blue);"></i> Pass Price Breakdown</h3>
                     </div>
                     <div class="card-body" id="price-bars"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- =================== ACCOUNTS =================== -->
+        <div class="page" id="p-accounts">
+            <div class="page-header">
+                <h2>Accounts</h2>
+                <p>User authentication and account management records from MySQL.</p>
+            </div>
+            <div class="card">
+                <div class="card-head">
+                    <h3>Account List</h3>
+                    <div class="act-right">
+                        <div class="search-wrap">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="acc-search" placeholder="Search accounts…" oninput="filterAccounts()">
+                        </div>
+                        <button class="btn btn-red" id="acc-add-btn" onclick="openModal('m-addaccount')" style="padding:8px 14px;font-size:.78rem;">
+                            <i class="fa-solid fa-plus"></i> Add Account
+                        </button>
+                    </div>
+                </div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead><tr>
+                            <th>#</th><th>Username</th><th>Profile</th>
+                            <th>Role</th><th>Status</th><th>Created</th><th>Actions</th>
+                        </tr></thead>
+                        <tbody id="tb-accounts"></tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -541,6 +589,133 @@
         <div class="modal-foot">
             <button class="btn btn-ghost" onclick="closeModal('m-addplayer')">Cancel</button>
             <button class="btn btn-blue" onclick="addPlayer()">Add Player</button>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     MODAL: ADD ACCOUNT
+================================================================ -->
+<div class="modal-bg" id="m-addaccount">
+    <div class="modal">
+        <div class="modal-head">
+            <h3><i class="fa-solid fa-user-plus" style="color:var(--blue);"></i> Add Account</h3>
+            <button class="modal-close" onclick="closeModal('m-addaccount')"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="aa-user" placeholder="e.g. admin2">
+        </div>
+        <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" id="aa-name" placeholder="Account owner">
+        </div>
+        <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="aa-email" placeholder="name@example.com">
+        </div>
+        <div class="form-group">
+            <label>Birthday</label>
+            <input type="date" id="aa-birthday">
+        </div>
+        <div class="form-group">
+            <label>Gender</label>
+            <select id="aa-gender">
+                <option value="">Prefer not to say</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Role</label>
+            <select id="aa-role">
+                <option value="user">User</option>
+                <option value="staff">Staff</option>
+                <option value="admin">Admin</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Status</label>
+            <select id="aa-status">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="aa-pass" placeholder="At least 8 characters">
+        </div>
+        <div class="form-group">
+            <label>Confirm Password</label>
+            <input type="password" id="aa-confirm" placeholder="Repeat password">
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn-ghost" onclick="closeModal('m-addaccount')">Cancel</button>
+            <button class="btn btn-blue" onclick="addAccount()">Add Account</button>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     MODAL: UPDATE ACCOUNT
+================================================================ -->
+<div class="modal-bg" id="m-editaccount">
+    <div class="modal">
+        <div class="modal-head">
+            <h3><i class="fa-solid fa-pen" style="color:var(--blue);"></i> Update Account</h3>
+            <button class="modal-close" onclick="closeModal('m-editaccount')"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <input type="hidden" id="ea-uid">
+        <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="ea-user">
+        </div>
+        <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" id="ea-name">
+        </div>
+        <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="ea-email">
+        </div>
+        <div class="form-group">
+            <label>Birthday</label>
+            <input type="date" id="ea-birthday">
+        </div>
+        <div class="form-group">
+            <label>Gender</label>
+            <select id="ea-gender">
+                <option value="">Prefer not to say</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Role</label>
+            <select id="ea-role">
+                <option value="user">User</option>
+                <option value="staff">Staff</option>
+                <option value="admin">Admin</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Status</label>
+            <select id="ea-status">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>New Password <span style="color:var(--text-3);font-weight:400;">(optional)</span></label>
+            <input type="password" id="ea-pass" placeholder="Leave blank to keep current">
+        </div>
+        <div class="form-group">
+            <label>Confirm New Password</label>
+            <input type="password" id="ea-confirm" placeholder="Repeat new password">
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn-ghost" onclick="closeModal('m-editaccount')">Cancel</button>
+            <button class="btn btn-blue" onclick="updateAccount()">Save Changes</button>
         </div>
     </div>
 </div>

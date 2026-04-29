@@ -1,25 +1,11 @@
 'use strict';
 
 /* ========================================================
-   THEME — dark / light toggle
+   THEME — dark / light toggle (no localStorage persistence)
 ======================================================== */
-(function applyTheme() {
-    if (localStorage.getItem('theme') === 'light') {
-        document.body.classList.add('light');
-    }
-})();
-
-/* sync icon once DOM is ready */
-document.addEventListener('DOMContentLoaded', () => {
-    const icon = document.getElementById('theme-icon');
-    if (icon && document.body.classList.contains('light')) {
-        icon.classList.replace('fa-moon', 'fa-sun');
-    }
-});
 
 function toggleTheme() {
     const isLight = document.body.classList.toggle('light');
-    localStorage.setItem('theme', isLight ? 'light' : 'dark');
     const icon = document.getElementById('theme-icon');
     if (isLight) {
         icon.classList.replace('fa-moon', 'fa-sun');
@@ -93,15 +79,6 @@ const AUDIT = [
 ];
 
 /* ========================================================
-   ACCOUNTS STORE
-   Default admin accounts + any newly registered users
-======================================================== */
-const ACCOUNTS = {
-    admin: 'admin123',
-    root:  'root',
-};
-
-/* ========================================================
    HELPERS
 ======================================================== */
 const pname  = pid  => PLAYERS.find(p => p.pid  === pid)?.uname  || `PID ${pid}`;
@@ -135,47 +112,6 @@ function go(id) {
         if (rr) rr.style.display = 'none';
         if (re) re.style.display = 'none';
     }
-}
-
-/* ========================================================
-   AUTH — LOGIN
-======================================================== */
-function doLogin() {
-    const user = document.getElementById('l-user').value.trim();
-    const pass = document.getElementById('l-pass').value;
-    const btn  = document.getElementById('l-btn');
-    const err  = document.getElementById('login-err');
-
-    if (!user || !pass) {
-        err.style.display = 'flex';
-        return;
-    }
-
-    btn.innerHTML = '<span class="spin"></span> Logging in&hellip;';
-    btn.disabled  = true;
-
-    setTimeout(() => {
-        btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Log In';
-        btn.disabled  = false;
-
-        if (ACCOUNTS[user] && ACCOUNTS[user] === pass) {
-            err.style.display = 'none';
-            document.getElementById('sb-uname').textContent = user;
-            document.getElementById('sb-av').textContent    = user[0].toUpperCase();
-            go('s-app');
-            renderAll();
-            toast('ok', `Welcome back, ${user}!`);
-        } else {
-            err.style.display = 'flex';
-        }
-    }, 900);
-}
-
-function doLogout() {
-    go('s-login');
-    document.getElementById('l-user').value = '';
-    document.getElementById('l-pass').value = '';
-    toast('info', 'You have been logged out.');
 }
 
 /* enter key for login */
@@ -256,92 +192,12 @@ function pickGender(el) {
     el.classList.add('picked');
 }
 
-function doSignup() {
-    const month   = document.getElementById('su-month').value;
-    const day     = document.getElementById('su-day').value;
-    const year    = document.getElementById('su-year').value;
-    const uname   = document.getElementById('su-user').value.trim();
-    const pass    = document.getElementById('su-pass').value;
-    const confirm = document.getElementById('su-confirm').value;
-    const btn     = document.getElementById('su-btn');
-
-    if (!month || !day || !year) {
-        toast('err', 'Please enter your birthday.');
-        return;
-    }
-    if (!uname) {
-        toast('err', 'Username is required.');
-        return;
-    }
-    if (!/^[a-zA-Z0-9_]{3,20}$/.test(uname)) {
-        toast('err', 'Username must be 3–20 characters (letters, numbers, underscores only).');
-        return;
-    }
-    if (ACCOUNTS[uname]) {
-        toast('err', 'That username is already taken. Please choose another.');
-        return;
-    }
-    if (pass.length < 8) {
-        toast('err', 'Password must be at least 8 characters.');
-        return;
-    }
-    if (pass !== confirm) {
-        toast('err', 'Passwords do not match.');
-        return;
-    }
-    btn.innerHTML = '<span class="spin"></span> Creating account&hellip;';
-    btn.disabled  = true;
-
-    setTimeout(() => {
-        btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> Sign Up';
-        btn.disabled  = false;
-
-        /* Register the new account */
-        ACCOUNTS[uname] = pass;
-
-        toast('ok', `Account created! Welcome, ${uname}. You can now log in.`);
-
-        /* Pre-fill the login username for convenience */
-        document.getElementById('l-user').value = uname;
-
-        /* Reset sign-up form */
-        document.getElementById('su-month').value   = '';
-        document.getElementById('su-day').value     = '';
-        document.getElementById('su-year').value    = '';
-        document.getElementById('su-user').value    = '';
-        document.getElementById('su-pass').value    = '';
-        document.getElementById('su-confirm').value = '';
-        document.getElementById('su-str-bar').style.width       = '0';
-        document.getElementById('su-str-label').textContent     = 'Strength: \u2014';
-        document.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('picked'));
-
-        go('s-login');
-    }, 1000);
-}
-
-/* ========================================================
-   AUTH — PASSWORD RECOVERY
-======================================================== */
-function recLookup() {
-    const uname = document.getElementById('r-ident').value.trim();
-    const result = document.getElementById('rec-result');
-    const err    = document.getElementById('rec-err');
-    result.style.display = 'none';
-    err.style.display    = 'none';
-    if (!uname) { toast('err', 'Please enter your username.'); return; }
-    if (ACCOUNTS[uname]) {
-        document.getElementById('rec-pw').textContent = ACCOUNTS[uname];
-        result.style.display = 'flex';
-    } else {
-        err.style.display = 'flex';
-    }
-}
-
 /* ========================================================
    APP NAVIGATION
 ======================================================== */
 const PAGE_TITLES = {
     'p-dash':       'Dashboard',
+    'p-accounts':   'Accounts',
     'p-players':    'Players',
     'p-gamepasses': 'Game Passes',
     'p-audit':      'Audit Log',
@@ -362,15 +218,6 @@ function showPage(pid, navEl) {
 /* ========================================================
    RENDER
 ======================================================== */
-function renderAll() {
-    updateDate();
-    renderTx();
-    renderPriceBars();
-    renderPlayers(PLAYERS);
-    renderGP(GAMEPASSES);
-    renderAudit();
-}
-
 function updateDate() {
     document.getElementById('tb-date').textContent =
         new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -657,6 +504,353 @@ function toast(type, msg) {
     document.getElementById('toast-box').appendChild(el);
     setTimeout(() => el.remove(), 3800);
 }
+
+/* ========================================================
+   PHP + MYSQL BACKEND
+======================================================== */
+const API_URL = 'api.php';
+let ACCOUNT_ROWS = [];
+let CURRENT_USER = null;
+
+const esc = value => String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+
+async function apiPost(action, data = {}) {
+    const body = new URLSearchParams({ action });
+    Object.entries(data).forEach(([key, value]) => body.append(key, value ?? ''));
+
+    const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        credentials: 'same-origin',
+        body
+    });
+
+    return response.json();
+}
+
+async function doLogin() {
+    const user = document.getElementById('l-user').value.trim();
+    const pass = document.getElementById('l-pass').value;
+    const btn  = document.getElementById('l-btn');
+    const err  = document.getElementById('login-err');
+
+    if (!user || !pass) {
+        err.querySelector('span').textContent = 'Username and password are required.';
+        err.style.display = 'flex';
+        return;
+    }
+
+    btn.innerHTML = '<span class="spin"></span> Logging in&hellip;';
+    btn.disabled  = true;
+
+    try {
+        const res = await apiPost('login', { username: user, password: pass });
+        if (!res.ok) {
+            err.querySelector('span').textContent = res.message || 'Invalid username or password.';
+            err.style.display = 'flex';
+            return;
+        }
+
+        err.style.display = 'none';
+        CURRENT_USER = res.user || null;
+        document.getElementById('sb-uname').textContent = res.user.username;
+        document.getElementById('sb-av').textContent = res.user.username[0].toUpperCase();
+        document.querySelector('.sb-urole').textContent =
+            res.user.role === 'admin' ? 'Super Administrator' : 'Staff User';
+        go('s-app');
+        renderAll();
+        toast('ok', `Welcome back, ${res.user.username}!`);
+    } catch (error) {
+        err.querySelector('span').textContent = 'Unable to connect to api.php.';
+        err.style.display = 'flex';
+    } finally {
+        btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Log In';
+        btn.disabled  = false;
+    }
+}
+
+async function doLogout() {
+    await apiPost('logout');
+    CURRENT_USER = null;
+    go('s-login');
+    document.getElementById('l-user').value = '';
+    document.getElementById('l-pass').value = '';
+    toast('info', 'You have been logged out.');
+}
+
+async function doSignup() {
+    const month   = document.getElementById('su-month').value;
+    const day     = document.getElementById('su-day').value;
+    const year    = document.getElementById('su-year').value;
+    const uname   = document.getElementById('su-user').value.trim();
+    const pass    = document.getElementById('su-pass').value;
+    const confirm = document.getElementById('su-confirm').value;
+    const gender  = document.querySelector('.gender-btn.picked span')?.textContent.toLowerCase() || '';
+    const btn     = document.getElementById('su-btn');
+
+    if (!month || !day || !year) { toast('err', 'Please enter your birthday.'); return; }
+    if (!uname) { toast('err', 'Username is required.'); return; }
+    if (!/^[a-zA-Z0-9_]{3,50}$/.test(uname)) {
+        toast('err', 'Username must be 3-50 characters (letters, numbers, underscores only).');
+        return;
+    }
+    if (pass.length < 8) { toast('err', 'Password must be at least 8 characters.'); return; }
+    if (pass !== confirm) { toast('err', 'Passwords do not match.'); return; }
+
+    btn.innerHTML = '<span class="spin"></span> Creating account&hellip;';
+    btn.disabled  = true;
+
+    try {
+        const res = await apiPost('signup', {
+            username: uname,
+            password: pass,
+            confirm_password: confirm,
+            birthday: `${year}-${month}-${day}`,
+            gender
+        });
+
+        if (!res.ok) {
+            toast('err', res.message);
+            return;
+        }
+
+        toast('ok', res.message);
+        document.getElementById('l-user').value = uname;
+        document.getElementById('su-month').value = '';
+        document.getElementById('su-day').value = '';
+        document.getElementById('su-year').value = '';
+        document.getElementById('su-user').value = '';
+        document.getElementById('su-pass').value = '';
+        document.getElementById('su-confirm').value = '';
+        document.getElementById('su-str-bar').style.width = '0';
+        document.getElementById('su-str-label').textContent = 'Strength: \u2014';
+        document.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('picked'));
+        go('s-login');
+    } catch (error) {
+        toast('err', 'Unable to connect to api.php.');
+    } finally {
+        btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> Sign Up';
+        btn.disabled  = false;
+    }
+}
+
+async function recLookup() {
+    const uname = document.getElementById('r-ident').value.trim();
+    const pass = document.getElementById('r-pass').value;
+    const confirm = document.getElementById('r-confirm').value;
+    const result = document.getElementById('rec-result');
+    const err = document.getElementById('rec-err');
+    result.style.display = 'none';
+    err.style.display = 'none';
+
+    if (!uname) { toast('err', 'Please enter your username.'); return; }
+    if (pass.length < 8) { toast('err', 'New password must be at least 8 characters.'); return; }
+    if (pass !== confirm) { toast('err', 'Passwords do not match.'); return; }
+
+    try {
+        const res = await apiPost('recover', {
+            username: uname,
+            password: pass,
+            confirm_password: confirm
+        });
+
+        if (!res.ok) {
+            document.getElementById('rec-err-msg').textContent = res.message;
+            err.style.display = 'flex';
+            return;
+        }
+
+        document.getElementById('rec-msg').textContent = res.message;
+        result.style.display = 'flex';
+        document.getElementById('r-pass').value = '';
+        document.getElementById('r-confirm').value = '';
+    } catch (error) {
+        document.getElementById('rec-err-msg').textContent = 'Unable to connect to api.php.';
+        err.style.display = 'flex';
+    }
+}
+
+function renderAll() {
+    updateDate();
+    renderTx();
+    renderPriceBars();
+    renderPlayers(PLAYERS);
+    renderGP(GAMEPASSES);
+    renderAudit();
+    loadAccounts();
+}
+
+function canManageAccounts() {
+    return CURRENT_USER?.role === 'admin';
+}
+
+async function loadAccounts(search = '') {
+    const res = await apiPost('accounts', { search });
+    if (!res.ok) {
+        toast('err', res.message);
+        return;
+    }
+
+    ACCOUNT_ROWS = res.accounts || [];
+    renderAccounts(ACCOUNT_ROWS);
+}
+
+function renderAccounts(data) {
+    const tb = document.getElementById('tb-accounts');
+    if (!tb) return;
+    const isAdmin = canManageAccounts();
+    const addButton = document.getElementById('acc-add-btn');
+    if (addButton) addButton.style.display = isAdmin ? 'inline-flex' : 'none';
+
+    if (!data.length) {
+        tb.innerHTML = '<tr><td colspan="7"><div class="empty"><i class="fa-solid fa-user-slash"></i><p>No accounts found.</p></div></td></tr>';
+        return;
+    }
+
+    tb.innerHTML = data.map(a => {
+        const nextStatus = a.status === 'active' ? 'inactive' : 'active';
+        const isSelf = Number(a.uid) === Number(CURRENT_USER?.uid);
+        const manageButtons = isAdmin
+            ? `
+                <button class="btn btn-ghost" onclick="openEditAccount(${Number(a.uid)})" style="padding:5px 11px;font-size:.75rem;">
+                    <i class="fa-solid fa-pen"></i> Edit
+                </button>
+                <button class="btn btn-ghost" onclick="setAccountStatus(${Number(a.uid)}, '${nextStatus}')" style="padding:5px 11px;font-size:.75rem;" ${isSelf && nextStatus === 'inactive' ? 'disabled' : ''}>
+                    <i class="fa-solid fa-${nextStatus === 'active' ? 'user-check' : 'user-slash'}"></i>
+                    ${nextStatus === 'active' ? 'Set Active' : 'Set Inactive'}
+                </button>
+                <button class="btn btn-ghost" onclick="deleteAccount(${Number(a.uid)}, '${esc(a.username)}')" style="padding:5px 11px;font-size:.75rem;" ${isSelf ? 'disabled' : ''}>
+                    <i class="fa-solid fa-trash"></i> Delete
+                </button>
+            `
+            : '<span style="color:var(--text-3);font-size:.76rem;">View only</span>';
+        return `<tr>
+            <td style="color:var(--text-3);font-size:.78rem;">${esc(a.uid)}</td>
+            <td><b>${esc(a.username)}</b></td>
+            <td>
+                <b>${esc(a.full_name || 'No name')}</b><br>
+                <span style="color:var(--text-3);font-size:.76rem;">${esc(a.email || 'No email')}</span>
+            </td>
+            <td><span class="ptag">${esc(a.role)}</span></td>
+            <td>${actBadge(a.status === 'active' ? 1 : 0, a.status)}</td>
+            <td style="color:var(--text-3);font-size:.76rem;">${esc(a.created_at)}</td>
+            <td>${manageButtons}</td>
+        </tr>`;
+    }).join('');
+}
+
+function filterAccounts() {
+    loadAccounts(document.getElementById('acc-search').value.trim());
+}
+
+async function addAccount() {
+    if (!canManageAccounts()) { toast('err', 'Only admin can add accounts.'); return; }
+    const data = {
+        username: document.getElementById('aa-user').value.trim(),
+        full_name: document.getElementById('aa-name').value.trim(),
+        email: document.getElementById('aa-email').value.trim(),
+        birthday: document.getElementById('aa-birthday').value,
+        gender: document.getElementById('aa-gender').value,
+        role: document.getElementById('aa-role').value,
+        status: document.getElementById('aa-status').value,
+        password: document.getElementById('aa-pass').value,
+        confirm_password: document.getElementById('aa-confirm').value
+    };
+
+    const res = await apiPost('add_account', data);
+    if (!res.ok) { toast('err', res.message); return; }
+
+    toast('ok', res.message);
+    ['aa-user','aa-name','aa-email','aa-birthday','aa-pass','aa-confirm'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('aa-gender').value = '';
+    document.getElementById('aa-role').value = 'user';
+    document.getElementById('aa-status').value = 'active';
+    closeModal('m-addaccount');
+    loadAccounts(document.getElementById('acc-search').value.trim());
+}
+
+function openEditAccount(uid) {
+    if (!canManageAccounts()) { toast('err', 'Only admin can edit accounts.'); return; }
+    const account = ACCOUNT_ROWS.find(a => Number(a.uid) === Number(uid));
+    if (!account) return;
+
+    document.getElementById('ea-uid').value = account.uid;
+    document.getElementById('ea-user').value = account.username || '';
+    document.getElementById('ea-name').value = account.full_name || '';
+    document.getElementById('ea-email').value = account.email || '';
+    document.getElementById('ea-birthday').value = account.birthday || '';
+    document.getElementById('ea-gender').value = account.gender || '';
+    document.getElementById('ea-role').value = account.role || 'user';
+    document.getElementById('ea-status').value = account.status || 'active';
+    document.getElementById('ea-pass').value = '';
+    document.getElementById('ea-confirm').value = '';
+    openModal('m-editaccount');
+}
+
+async function updateAccount() {
+    if (!canManageAccounts()) { toast('err', 'Only admin can update accounts.'); return; }
+    const data = {
+        uid: document.getElementById('ea-uid').value,
+        username: document.getElementById('ea-user').value.trim(),
+        full_name: document.getElementById('ea-name').value.trim(),
+        email: document.getElementById('ea-email').value.trim(),
+        birthday: document.getElementById('ea-birthday').value,
+        gender: document.getElementById('ea-gender').value,
+        role: document.getElementById('ea-role').value,
+        status: document.getElementById('ea-status').value,
+        password: document.getElementById('ea-pass').value,
+        confirm_password: document.getElementById('ea-confirm').value
+    };
+
+    const res = await apiPost('update_account', data);
+    if (!res.ok) { toast('err', res.message); return; }
+
+    toast('ok', res.message);
+    closeModal('m-editaccount');
+    loadAccounts(document.getElementById('acc-search').value.trim());
+}
+
+async function setAccountStatus(uid, status) {
+    if (!canManageAccounts()) { toast('err', 'Only admin can update account status.'); return; }
+    const res = await apiPost('set_status', { uid, status });
+    if (!res.ok) { toast('err', res.message); return; }
+
+    toast('ok', res.message);
+    loadAccounts(document.getElementById('acc-search').value.trim());
+}
+
+async function deleteAccount(uid, username) {
+    if (!canManageAccounts()) { toast('err', 'Only admin can delete accounts.'); return; }
+    if (!confirm(`Delete account "${username}"? This cannot be undone.`)) return;
+
+    const res = await apiPost('delete_account', { uid });
+    if (!res.ok) { toast('err', res.message); return; }
+
+    toast('ok', res.message);
+    loadAccounts(document.getElementById('acc-search').value.trim());
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const res = await apiPost('session');
+        if (res.ok && res.logged_in && res.user.username) {
+            CURRENT_USER = res.user || null;
+            document.getElementById('sb-uname').textContent = res.user.username;
+            document.getElementById('sb-av').textContent = res.user.username[0].toUpperCase();
+            document.querySelector('.sb-urole').textContent =
+                res.user.role === 'admin' ? 'Super Administrator' : 'Staff User';
+            go('s-app');
+            renderAll();
+        }
+    } catch (error) {
+        /* The login screen will show the API error when the user tries to log in. */
+    }
+});
 
 /* ========================================================
    INIT
