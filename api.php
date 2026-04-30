@@ -998,10 +998,17 @@ try {
                     a.action_type AS action,
                     'trigger' AS actor,
                     CONCAT(p.uname, ' / ', g.gname) AS target,
-                    CONCAT(
-                        'src: ', COALESCE(a.old_src, '-'), ' -> ', COALESCE(a.new_src, '-'),
-                        '; status: ', COALESCE(a.old_act, '-'), ' -> ', COALESCE(a.new_act, '-')
-                    ) AS details,
+                    CASE
+                        WHEN a.action_type = 'INSERT' THEN CONCAT('Purchased game pass via ', COALESCE(a.new_src, 'purchase'), '.')
+                        WHEN a.action_type = 'UPDATE' THEN
+                            CASE
+                                WHEN COALESCE(a.old_act, 0) = 0 AND COALESCE(a.new_act, 0) = 1 THEN 'Re-activated game pass ownership.'
+                                WHEN COALESCE(a.old_act, 0) = 1 AND COALESCE(a.new_act, 0) = 0 THEN 'Deactivated game pass ownership.'
+                                ELSE CONCAT('Updated game pass ownership (source: ', COALESCE(a.new_src, '-'), ').')
+                            END
+                        WHEN a.action_type = 'DELETE' THEN 'Removed game pass ownership record.'
+                        ELSE 'Updated game pass record.'
+                    END AS details,
                     a.action_time AS ts
              FROM player_gamepasses_audit a
              JOIN players p ON p.pid = a.pid

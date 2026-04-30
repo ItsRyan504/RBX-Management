@@ -288,10 +288,12 @@ function renderGP(data) {
 }
 
 function ownsGamepass(gpid) {
-    if (!CURRENT_USER?.username) return false;
-    return DB_TRANSACTIONS.some(tx =>
-        tx.uname === CURRENT_USER.username && Number(tx.gpid) === Number(gpid) && Number(tx.act) === 1
-    );
+    const username = String(CURRENT_USER?.username || '').toLowerCase();
+    if (!username) return false;
+    return DB_TRANSACTIONS.some(tx => {
+        const txUser = String(tx.uname || '').toLowerCase();
+        return Number(tx.gpid) === Number(gpid) && Number(tx.act) === 1 && txUser === username;
+    });
 }
 
 function renderAudit(data) {
@@ -354,6 +356,8 @@ async function loadTransactions() {
     if (!res.ok) return;
     DB_TRANSACTIONS = res.transactions || [];
     renderTx(DB_TRANSACTIONS);
+    /* Re-render catalog actions once ownership data is available. */
+    renderGP(DB_GAMEPASSES);
     renderPriceBars(DB_GAMEPASSES);
 }
 
