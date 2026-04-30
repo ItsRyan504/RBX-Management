@@ -65,6 +65,15 @@ function require_admin(): void
     }
 }
 
+function require_staff_or_admin(): void
+{
+    require_login();
+    $role = (string) ($_SESSION['role'] ?? '');
+    if (!in_array($role, ['admin', 'staff'], true)) {
+        respond(false, 'Only staff or admin accounts can manage this section.');
+    }
+}
+
 function public_account(array $account): array
 {
     $username = (string) ($account['username'] ?? '');
@@ -180,9 +189,79 @@ function ensure_accounts_table(mysqli $conn): void
         }
     }
 
-    $stmt = $conn->prepare('UPDATE accounts SET role = "user" WHERE username <> ? AND role <> "user"');
+    $stmt = $conn->prepare('UPDATE accounts SET role = "user" WHERE username <> ? AND role NOT IN ("user", "staff")');
     $stmt->bind_param('s', $adminUsername);
     $stmt->execute();
+}
+
+function ensure_system_audit_table(mysqli $conn): void
+{
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS system_audit (
+            id int(11) NOT NULL AUTO_INCREMENT,
+            module varchar(30) NOT NULL,
+            action varchar(30) NOT NULL,
+            actor varchar(50) DEFAULT NULL,
+            target varchar(120) DEFAULT NULL,
+            details text DEFAULT NULL,
+            created_at timestamp NOT NULL DEFAULT current_timestamp(),
+            PRIMARY KEY (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+    );
+}
+
+function write_audit(mysqli $conn, string $module, string $action, ?string $target = null, ?string $details = null): void
+{
+    $actor = (string) ($_SESSION['username'] ?? 'system');
+    $stmt = $conn->prepare(
+        'INSERT INTO system_audit (module, action, actor, target, details) VALUES (?, ?, ?, ?, ?)'
+    );
+    $stmt->bind_param('sssss', $module, $action, $actor, $target, $details);
+    $stmt->execute();
+}
+
+function find_or_create_benefit(mysqli $conn, string $benefitName): int
+{
+    $name = trim($benefitName);
+    if ($name === '') {
+        return 0;
+    }
+
+    $stmt = $conn->prepare('SELECT bid FROM benefit_types WHERE bname = ? LIMIT 1');
+    $stmt->bind_param('s', $name);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    if ($row) {
+        return (int) $row['bid'];
+    }
+
+    $code = strtoupper(preg_replace('/[^A-Za-z0-9]+/', '_', $name));
+    $code = trim($code, '_');
+    if ($code === '') {
+        $code = 'BENEFIT_' . substr(md5($name . microtime(true)), 0, 8);
+    }
+
+    $baseCode = substr($code, 0, 40);
+    $code = $baseCode;
+    $i = 1;
+    while (true) {
+        $stmt = $conn->prepare('SELECT bid FROM benefit_types WHERE bcode = ? LIMIT 1');
+        $stmt->bind_param('s', $code);
+        $stmt->execute();
+        if (!$stmt->get_result()->fetch_assoc()) {
+            break;
+        }
+        $suffix = '_' . $i;
+        $code = substr($baseCode, 0, max(1, 40 - strlen($suffix))) . $suffix;
+        $i++;
+    }
+
+    $stmt = $conn->prepare('INSERT INTO benefit_types (bcode, bname, bdesc) VALUES (?, ?, ?)');
+    $desc = $name;
+    $stmt->bind_param('sss', $code, $name, $desc);
+    $stmt->execute();
+
+    return (int) $conn->insert_id;
 }
 
 function validate_account(array $data, bool $passwordRequired): void
@@ -227,7 +306,7 @@ function account_from_post(bool $forceUserRole = false, bool $forceActiveStatus 
         'email' => value('email', null),
         'birthday' => value('birthday', null),
         'gender' => value('gender', null),
-        'role' => in_array($role, ['admin', 'user'], true) ? $role : 'user',
+        'role' => in_array($role, ['admin', 'staff', 'user'], true) ? $role : 'user',
         'status' => in_array($status, ['active', 'inactive'], true) ? $status : 'active',
     ];
 }
@@ -284,6 +363,7 @@ try {
     $mysql = new MySQLConnection();
     $conn = $mysql->getConnection();
     ensure_accounts_table($conn);
+    ensure_system_audit_table($conn);
 } catch (Throwable $e) {
     respond(false, 'Database error: ' . $e->getMessage());
 }
@@ -418,9 +498,19 @@ try {
 
     if ($action === 'add_account') {
         require_admin();
-        $data = account_from_post(true);
+        $data = account_from_post();
+        if ($data['role'] === 'admin') {
+            $data['role'] = 'user';
+        }
         validate_account($data, true);
         $account = create_account($conn, $data);
+        write_audit(
+            $conn,
+            'accounts',
+            'ADD',
+            $account['username'],
+            'Created account with role ' . $account['role'] . '.'
+        );
         respond(true, 'Account added and saved to the database.', [
             'account' => $account,
         ]);
@@ -491,6 +581,13 @@ try {
         }
 
         $stmt->execute();
+        write_audit(
+            $conn,
+            'accounts',
+            'UPDATE',
+            $username,
+            'Updated account profile, role, status, or password.'
+        );
         respond(true, 'Account updated successfully.');
     }
 
@@ -519,6 +616,13 @@ try {
         $stmt = $conn->prepare('UPDATE accounts SET status = ? WHERE uid = ?');
         $stmt->bind_param('si', $status, $uid);
         $stmt->execute();
+        write_audit(
+            $conn,
+            'accounts',
+            'STATUS',
+            $existingAccount['username'],
+            'Set account status to ' . $status . '.'
+        );
         respond(true, 'Account status updated.');
     }
 
@@ -543,6 +647,7 @@ try {
             respond(false, 'The main admin account cannot be deleted.');
         }
 
+        $deletedUsername = (string) $existingAccount['username'];
         $stmt = $conn->prepare('DELETE FROM accounts WHERE uid = ?');
         $stmt->bind_param('i', $uid);
         $stmt->execute();
@@ -551,6 +656,13 @@ try {
             respond(false, 'Account not found.');
         }
 
+        write_audit(
+            $conn,
+            'accounts',
+            'DELETE',
+            $deletedUsername,
+            'Deleted user account from dashboard.'
+        );
         respond(true, 'Account deleted successfully.');
     }
 
@@ -575,25 +687,252 @@ try {
     }
 
     if ($action === 'toggle_player_status') {
-        require_admin();
+        require_staff_or_admin();
         $pid    = (int) ($_POST['pid']    ?? 0);
         $status = value('stat', 'active') === 'active' ? 'active' : 'banned';
+        $stmt = $conn->prepare('SELECT uname FROM players WHERE pid = ? LIMIT 1');
+        $stmt->bind_param('i', $pid);
+        $stmt->execute();
+        $player = $stmt->get_result()->fetch_assoc();
+        if (!$player) {
+            respond(false, 'Player not found.');
+        }
         $stmt   = $conn->prepare('UPDATE players SET stat = ? WHERE pid = ?');
         $stmt->bind_param('si', $status, $pid);
         $stmt->execute();
+        write_audit(
+            $conn,
+            'players',
+            'STATUS',
+            $player['uname'],
+            'Set player status to ' . $status . '.'
+        );
         respond(true, 'Player status updated.');
     }
 
     if ($action === 'add_player') {
-        require_admin();
+        require_staff_or_admin();
         $uname = value('uname', '') ?? '';
         $jdate = value('jdate', date('Y-m-d')) ?? date('Y-m-d');
         $stat  = value('stat',  'active') === 'banned' ? 'banned' : 'active';
         if ($uname === '') respond(false, 'Username is required.');
-        $stmt = $conn->prepare('INSERT INTO players (uname, jdate, stat) VALUES (?, ?, ?)');
-        $stmt->bind_param('sss', $uname, $jdate, $stat);
+        $nextPid = (int) $conn->query('SELECT COALESCE(MAX(pid), 0) + 1 FROM players')->fetch_row()[0];
+        $stmt = $conn->prepare('INSERT INTO players (pid, uname, jdate, stat) VALUES (?, ?, ?, ?)');
+        $stmt->bind_param('isss', $nextPid, $uname, $jdate, $stat);
         $stmt->execute();
+        write_audit(
+            $conn,
+            'players',
+            'ADD',
+            $uname,
+            'Added player with status ' . $stat . '.'
+        );
         respond(true, 'Player added successfully.');
+    }
+
+    if ($action === 'add_gamepass') {
+        require_staff_or_admin();
+        $name = value('gname', '') ?? '';
+        $descr = value('descr', null);
+        $price = max(0, (int) ($_POST['price'] ?? 0));
+        $sale = (int) ($_POST['sale'] ?? 0) === 1 ? 1 : 0;
+        $benefit = value('benefit', null);
+
+        if ($name === '') {
+            respond(false, 'Pass name is required.');
+        }
+
+        $nextId = (int) $conn->query('SELECT COALESCE(MAX(gpid), 0) + 1 FROM gamepasses')->fetch_row()[0];
+        $stmt = $conn->prepare('INSERT INTO gamepasses (gpid, gname, descr, price, sale) VALUES (?, ?, ?, ?, ?)');
+        $stmt->bind_param('issii', $nextId, $name, $descr, $price, $sale);
+        $stmt->execute();
+
+        $benefitName = trim((string) ($benefit ?? ''));
+        if ($benefitName !== '') {
+            $bid = find_or_create_benefit($conn, $benefitName);
+            if ($bid > 0) {
+                $stmt = $conn->prepare('INSERT INTO gamepass_benefits (gpid, bid, val) VALUES (?, ?, ?)');
+                $stmt->bind_param('iis', $nextId, $bid, $benefitName);
+                $stmt->execute();
+            }
+        }
+
+        write_audit(
+            $conn,
+            'gamepasses',
+            'ADD',
+            $name,
+            'Added pass (price=' . $price . ', sale=' . $sale . ').'
+        );
+        respond(true, 'Game pass added to catalog.');
+    }
+
+    if ($action === 'update_gamepass') {
+        require_staff_or_admin();
+        $gpid = (int) ($_POST['gpid'] ?? 0);
+        $name = value('gname', '') ?? '';
+        $descr = value('descr', null);
+        $price = max(0, (int) ($_POST['price'] ?? 0));
+        $sale = (int) ($_POST['sale'] ?? 0) === 1 ? 1 : 0;
+        $benefit = value('benefit', null);
+
+        if ($gpid < 1) {
+            respond(false, 'Invalid pass selected.');
+        }
+        if ($name === '') {
+            respond(false, 'Pass name is required.');
+        }
+
+        $stmt = $conn->prepare('SELECT gname FROM gamepasses WHERE gpid = ? LIMIT 1');
+        $stmt->bind_param('i', $gpid);
+        $stmt->execute();
+        $existingPass = $stmt->get_result()->fetch_assoc();
+        if (!$existingPass) {
+            respond(false, 'Game pass not found.');
+        }
+
+        $stmt = $conn->prepare('UPDATE gamepasses SET gname = ?, descr = ?, price = ?, sale = ? WHERE gpid = ?');
+        $stmt->bind_param('ssiii', $name, $descr, $price, $sale, $gpid);
+        $stmt->execute();
+
+        $stmt = $conn->prepare('DELETE FROM gamepass_benefits WHERE gpid = ?');
+        $stmt->bind_param('i', $gpid);
+        $stmt->execute();
+
+        $benefitName = trim((string) ($benefit ?? ''));
+        if ($benefitName !== '') {
+            $bid = find_or_create_benefit($conn, $benefitName);
+            if ($bid > 0) {
+                $stmt = $conn->prepare('INSERT INTO gamepass_benefits (gpid, bid, val) VALUES (?, ?, ?)');
+                $stmt->bind_param('iis', $gpid, $bid, $benefitName);
+                $stmt->execute();
+            }
+        }
+
+        write_audit(
+            $conn,
+            'gamepasses',
+            'UPDATE',
+            $name,
+            'Updated pass catalog information.'
+        );
+        respond(true, 'Game pass updated.');
+    }
+
+    if ($action === 'delete_gamepass') {
+        require_staff_or_admin();
+        $gpid = (int) ($_POST['gpid'] ?? 0);
+        if ($gpid < 1) {
+            respond(false, 'Invalid pass selected.');
+        }
+
+        $stmt = $conn->prepare('SELECT gname FROM gamepasses WHERE gpid = ? LIMIT 1');
+        $stmt->bind_param('i', $gpid);
+        $stmt->execute();
+        $existingPass = $stmt->get_result()->fetch_assoc();
+        if (!$existingPass) {
+            respond(false, 'Game pass not found.');
+        }
+
+        $stmt = $conn->prepare('DELETE FROM gamepass_benefits WHERE gpid = ?');
+        $stmt->bind_param('i', $gpid);
+        $stmt->execute();
+
+        $stmt = $conn->prepare('DELETE FROM player_gamepasses WHERE gpid = ?');
+        $stmt->bind_param('i', $gpid);
+        $stmt->execute();
+
+        $stmt = $conn->prepare('DELETE FROM gamepasses WHERE gpid = ?');
+        $stmt->bind_param('i', $gpid);
+        $stmt->execute();
+        if ($stmt->affected_rows < 1) {
+            respond(false, 'Game pass not found.');
+        }
+
+        write_audit(
+            $conn,
+            'gamepasses',
+            'DELETE',
+            $existingPass['gname'],
+            'Deleted pass from catalog.'
+        );
+        respond(true, 'Game pass deleted.');
+    }
+
+    if ($action === 'buy_gamepass') {
+        require_login();
+        $gpid = (int) ($_POST['gpid'] ?? 0);
+        if ($gpid < 1) {
+            respond(false, 'Invalid game pass selected.');
+        }
+
+        $stmt = $conn->prepare('SELECT gpid, gname, sale FROM gamepasses WHERE gpid = ? LIMIT 1');
+        $stmt->bind_param('i', $gpid);
+        $stmt->execute();
+        $gamepass = $stmt->get_result()->fetch_assoc();
+        if (!$gamepass) {
+            respond(false, 'Game pass not found.');
+        }
+        if ((int) $gamepass['sale'] !== 1) {
+            respond(false, 'This game pass is currently off sale.');
+        }
+
+        $username = (string) ($_SESSION['username'] ?? '');
+        if ($username === '') {
+            respond(false, 'Please log in first.');
+        }
+
+        $stmt = $conn->prepare('SELECT pid, stat FROM players WHERE uname = ? LIMIT 1');
+        $stmt->bind_param('s', $username);
+        $stmt->execute();
+        $player = $stmt->get_result()->fetch_assoc();
+
+        if (!$player) {
+            $joinDate = date('Y-m-d');
+            $active = 'active';
+            $nextPid = (int) $conn->query('SELECT COALESCE(MAX(pid), 0) + 1 FROM players')->fetch_row()[0];
+            $stmt = $conn->prepare('INSERT INTO players (pid, uname, jdate, stat) VALUES (?, ?, ?, ?)');
+            $stmt->bind_param('isss', $nextPid, $username, $joinDate, $active);
+            $stmt->execute();
+            $stmt = $conn->prepare('SELECT pid, stat FROM players WHERE uname = ? LIMIT 1');
+            $stmt->bind_param('s', $username);
+            $stmt->execute();
+            $player = $stmt->get_result()->fetch_assoc();
+        }
+
+        if (!$player) {
+            respond(false, 'Unable to create a player profile for this account.');
+        }
+
+        $playerId = (int) $player['pid'];
+        if (($player['stat'] ?? 'active') !== 'active') {
+            respond(false, 'Your player profile is inactive/banned and cannot buy passes.');
+        }
+
+        $stmt = $conn->prepare('SELECT act FROM player_gamepasses WHERE pid = ? AND gpid = ? LIMIT 1');
+        $stmt->bind_param('ii', $playerId, $gpid);
+        $stmt->execute();
+        $owned = $stmt->get_result()->fetch_assoc();
+
+        if ($owned && (int) $owned['act'] === 1) {
+            respond(false, 'You already own this game pass.');
+        }
+
+        if ($owned) {
+            $src = 'purchase';
+            $active = 1;
+            $stmt = $conn->prepare('UPDATE player_gamepasses SET src = ?, act = ? WHERE pid = ? AND gpid = ?');
+            $stmt->bind_param('siii', $src, $active, $playerId, $gpid);
+            $stmt->execute();
+        } else {
+            $src = 'purchase';
+            $active = 1;
+            $stmt = $conn->prepare('INSERT INTO player_gamepasses (pid, gpid, src, act) VALUES (?, ?, ?, ?)');
+            $stmt->bind_param('iisi', $playerId, $gpid, $src, $active);
+            $stmt->execute();
+        }
+
+        respond(true, 'Purchase successful! You now own "' . $gamepass['gname'] . '".');
     }
 
     if ($action === 'gamepasses') {
@@ -626,26 +965,57 @@ try {
     }
 
     if ($action === 'transactions') {
-        $rows = $conn->query(
-            'SELECT p.uname, g.gname, pg.src, pg.act
-             FROM player_gamepasses pg
-             JOIN players   p ON p.pid  = pg.pid
-             JOIN gamepasses g ON g.gpid = pg.gpid
-             ORDER BY pg.atime DESC'
-        )->fetch_all(MYSQLI_ASSOC);
+        $role = (string) ($_SESSION['role'] ?? '');
+        if ($role === 'user') {
+            $username = (string) ($_SESSION['username'] ?? '');
+            $stmt = $conn->prepare(
+                'SELECT p.uname, g.gname, g.gpid, pg.src, pg.act
+                 FROM player_gamepasses pg
+                 JOIN players   p ON p.pid  = pg.pid
+                 JOIN gamepasses g ON g.gpid = pg.gpid
+                 WHERE p.uname = ?
+                 ORDER BY pg.atime DESC'
+            );
+            $stmt->bind_param('s', $username);
+            $stmt->execute();
+            $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        } else {
+            $rows = $conn->query(
+                'SELECT p.uname, g.gname, g.gpid, pg.src, pg.act
+                 FROM player_gamepasses pg
+                 JOIN players   p ON p.pid  = pg.pid
+                 JOIN gamepasses g ON g.gpid = pg.gpid
+                 ORDER BY pg.atime DESC'
+            )->fetch_all(MYSQLI_ASSOC);
+        }
         respond(true, '', ['transactions' => $rows]);
     }
 
     if ($action === 'audit') {
         $rows = $conn->query(
-            'SELECT a.audit_id AS id, a.action_type AS action,
-                    p.uname, g.gname,
-                    a.old_src, a.new_src, a.old_act, a.new_act,
+            "SELECT CONCAT('PGP-', a.audit_id) AS id,
+                    'player_gamepass' AS module,
+                    a.action_type AS action,
+                    'trigger' AS actor,
+                    CONCAT(p.uname, ' / ', g.gname) AS target,
+                    CONCAT(
+                        'src: ', COALESCE(a.old_src, '-'), ' -> ', COALESCE(a.new_src, '-'),
+                        '; status: ', COALESCE(a.old_act, '-'), ' -> ', COALESCE(a.new_act, '-')
+                    ) AS details,
                     a.action_time AS ts
              FROM player_gamepasses_audit a
-             JOIN players    p ON p.pid  = a.pid
+             JOIN players p ON p.pid = a.pid
              JOIN gamepasses g ON g.gpid = a.gpid
-             ORDER BY a.audit_id DESC'
+             UNION ALL
+             SELECT CONCAT('SYS-', s.id) AS id,
+                    s.module,
+                    s.action,
+                    COALESCE(s.actor, 'system') AS actor,
+                    COALESCE(s.target, '-') AS target,
+                    COALESCE(s.details, '-') AS details,
+                    s.created_at AS ts
+             FROM system_audit s
+             ORDER BY ts DESC"
         )->fetch_all(MYSQLI_ASSOC);
         respond(true, '', ['audit' => $rows]);
     }
@@ -670,7 +1040,7 @@ try {
     respond(false, 'Unknown request.');
 } catch (mysqli_sql_exception $e) {
     if ((int) $e->getCode() === 1062) {
-        respond(false, 'Username or email already exists.');
+        respond(false, 'Duplicate value detected (username, email, or pass name already exists).');
     }
 
     respond(false, 'Database error: ' . $e->getMessage());

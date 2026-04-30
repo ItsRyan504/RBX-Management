@@ -230,7 +230,7 @@ function renderPlayers(data) {
         tb.innerHTML = '<tr><td colspan="6"><div class="empty"><i class="fa-solid fa-users-slash"></i><p>No players found.</p></div></td></tr>';
         return;
     }
-    const canEdit = canManageAccounts();
+    const canEdit = canManageOperations();
     tb.innerHTML = data.map(p => `
         <tr>
             <td style="color:var(--text-3);font-size:.78rem;">${esc(p.pid)}</td>
@@ -251,9 +251,12 @@ function renderPlayers(data) {
 function renderGP(data) {
     const tb = document.getElementById('tb-gp');
     if (!data.length) {
-        tb.innerHTML = '<tr><td colspan="6"><div class="empty"><i class="fa-solid fa-ticket"></i><p>No passes found.</p></div></td></tr>';
+        tb.innerHTML = '<tr><td colspan="7"><div class="empty"><i class="fa-solid fa-ticket"></i><p>No passes found.</p></div></td></tr>';
         return;
     }
+
+    const canEdit = canManageOperations();
+    const canBuy = CURRENT_USER?.role === 'user';
     tb.innerHTML = data.map(g => `
         <tr>
             <td style="color:var(--text-3);font-size:.78rem;">${esc(g.gpid)}</td>
@@ -262,25 +265,53 @@ function renderGP(data) {
             <td style="font-weight:800;color:var(--yellow);">${Number(g.price) ? 'R$ ' + g.price : '<span style="color:var(--green);">Free</span>'}</td>
             <td><span class="ptag">${esc(g.benefit)}</span></td>
             <td><span class="badge ${Number(g.sale) ? 'b-on' : 'b-off'}"><span class="badge-dot"></span>${Number(g.sale) ? 'On Sale' : 'Off Sale'}</span></td>
+            <td style="display:flex;gap:4px;flex-wrap:wrap;">
+                ${canEdit ? `
+                    <button class="btn btn-ghost" onclick="openEditGamepass(${Number(g.gpid)})" style="padding:5px 11px;font-size:.75rem;">
+                        <i class="fa-solid fa-pen"></i> Edit
+                    </button>
+                    <button class="btn btn-ghost" onclick="deleteGamepass(${Number(g.gpid)}, '${jsString(g.gname)}')" style="padding:5px 11px;font-size:.75rem;color:var(--red);">
+                        <i class="fa-solid fa-trash"></i> Delete
+                    </button>
+                ` : canBuy ? `
+                    <button class="btn btn-ghost" onclick="buyGamepass(${Number(g.gpid)}, '${jsString(g.gname)}')" style="padding:5px 11px;font-size:.75rem;" ${Number(g.sale) !== 1 || ownsGamepass(g.gpid) ? 'disabled' : ''}>
+                        <i class="fa-solid fa-cart-shopping"></i> ${ownsGamepass(g.gpid) ? 'Owned' : (Number(g.sale) === 1 ? 'Buy' : 'Off Sale')}
+                    </button>
+                    ${ownsGamepass(g.gpid) ? `
+                        <button class="btn btn-ghost" onclick="printReceipt(${Number(g.gpid)}, '${jsString(g.gname)}')" style="padding:5px 11px;font-size:.75rem;">
+                            <i class="fa-solid fa-receipt"></i> Receipt
+                        </button>
+                    ` : ''}
+                ` : `<span style="color:var(--text-3);font-size:.76rem;"><i class="fa-solid fa-eye"></i> View only</span>`}
+            </td>
         </tr>`).join('');
+}
+
+function ownsGamepass(gpid) {
+    if (!CURRENT_USER?.username) return false;
+    return DB_TRANSACTIONS.some(tx =>
+        tx.uname === CURRENT_USER.username && Number(tx.gpid) === Number(gpid) && Number(tx.act) === 1
+    );
 }
 
 function renderAudit(data) {
     const tb = document.getElementById('tb-audit');
+    const chip = document.querySelector('#p-audit .chip');
+    if (chip) {
+        chip.textContent = `${data?.length || 0} record${(data?.length || 0) === 1 ? '' : 's'}`;
+    }
     if (!data || !data.length) {
-        tb.innerHTML = '<tr><td colspan="9"><div class="empty"><i class="fa-solid fa-clock-rotate-left"></i><p>No audit records.</p></div></td></tr>';
+        tb.innerHTML = '<tr><td colspan="7"><div class="empty"><i class="fa-solid fa-clock-rotate-left"></i><p>No audit records.</p></div></td></tr>';
         return;
     }
     tb.innerHTML = data.map(a => `
         <tr>
             <td style="color:var(--text-3);font-size:.78rem;">${esc(a.id)}</td>
+            <td><span class="badge b-unknown">${esc(a.module || 'system')}</span></td>
             <td>${actionBadge(a.action)}</td>
-            <td><b>${esc(a.uname)}</b></td>
-            <td><span class="ptag"><i class="fa-solid fa-ticket"></i>${esc(a.gname)}</span></td>
-            <td style="color:var(--text-2);">${a.old_src ?? '&mdash;'}</td>
-            <td style="color:var(--text-2);">${a.new_src ?? '&mdash;'}</td>
-            <td>${a.old_act != null ? actBadge(Number(a.old_act)) : '&mdash;'}</td>
-            <td>${a.new_act != null ? actBadge(Number(a.new_act)) : '&mdash;'}</td>
+            <td><b>${esc(a.actor || '-')}</b></td>
+            <td><span class="ptag">${esc(a.target || '-')}</span></td>
+            <td style="color:var(--text-2);max-width:320px;">${esc(a.details || '-')}</td>
             <td style="color:var(--text-3);font-size:.76rem;">${esc(a.ts)}</td>
         </tr>`).join('');
 }
@@ -347,7 +378,7 @@ function filterGP() {
 }
 
 async function toggleBan(pid, uname, currentStat) {
-    if (!canManageAccounts()) { toast('err', 'Only admin can update players.'); return; }
+    if (!canManageOperations()) { toast('err', 'Only staff/admin can update players.'); return; }
     const newStat = currentStat === 'active' ? 'banned' : 'active';
     const res = await apiPost('toggle_player_status', { pid, stat: newStat });
     if (!res.ok) { toast('err', res.message); return; }
@@ -365,6 +396,10 @@ function openModal(id) {
     if (id === 'm-addaccount' && aaBirthday) {
         aaBirthday.max = new Date().toISOString().split('T')[0];
     }
+    const eaBirthday = document.getElementById('ea-birthday');
+    if (id === 'm-editaccount' && eaBirthday) {
+        eaBirthday.max = new Date().toISOString().split('T')[0];
+    }
     document.getElementById(id).classList.add('open');
 }
 
@@ -373,7 +408,7 @@ function closeModal(id) {
 }
 
 async function addPlayer() {
-    if (!canManageAccounts()) { toast('err', 'Only admin can add players.'); return; }
+    if (!canManageOperations()) { toast('err', 'Only staff/admin can add players.'); return; }
     const uname = document.getElementById('ap-name').value.trim();
     const jdate = document.getElementById('ap-date').value;
     const stat  = document.getElementById('ap-status').value;
@@ -385,6 +420,146 @@ async function addPlayer() {
     closeModal('m-addplayer');
     loadPlayers();
     loadStats();
+    loadAudit();
+}
+
+async function addGamepass() {
+    if (!canManageOperations()) { toast('err', 'Only staff/admin can add passes.'); return; }
+    const gname = document.getElementById('gp-name').value.trim();
+    const descr = document.getElementById('gp-desc').value.trim();
+    const benefit = document.getElementById('gp-benefit').value.trim();
+    const price = document.getElementById('gp-price').value;
+    const sale = document.getElementById('gp-sale').value;
+
+    if (!gname) { toast('err', 'Pass name is required.'); return; }
+    const res = await apiPost('add_gamepass', { gname, descr, benefit, price, sale });
+    if (!res.ok) { toast('err', res.message); return; }
+
+    toast('ok', res.message);
+    ['gp-name', 'gp-desc', 'gp-benefit'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('gp-price').value = '0';
+    document.getElementById('gp-sale').value = '1';
+    closeModal('m-addpass');
+    loadGamepasses(document.getElementById('gp-search').value.trim());
+    loadStats();
+    loadAudit();
+}
+
+function openEditGamepass(gpid) {
+    if (!canManageOperations()) { toast('err', 'Only staff/admin can edit passes.'); return; }
+    const pass = DB_GAMEPASSES.find(g => Number(g.gpid) === Number(gpid));
+    if (!pass) return;
+
+    document.getElementById('egp-id').value = pass.gpid;
+    document.getElementById('egp-name').value = pass.gname || '';
+    document.getElementById('egp-desc').value = pass.descr || '';
+    document.getElementById('egp-benefit').value = pass.benefit || '';
+    document.getElementById('egp-price').value = Number(pass.price) || 0;
+    document.getElementById('egp-sale').value = Number(pass.sale) ? '1' : '0';
+    openModal('m-editpass');
+}
+
+async function updateGamepass() {
+    if (!canManageOperations()) { toast('err', 'Only staff/admin can update passes.'); return; }
+    const gpid = document.getElementById('egp-id').value;
+    const gname = document.getElementById('egp-name').value.trim();
+    const descr = document.getElementById('egp-desc').value.trim();
+    const benefit = document.getElementById('egp-benefit').value.trim();
+    const price = document.getElementById('egp-price').value;
+    const sale = document.getElementById('egp-sale').value;
+
+    if (!gname) { toast('err', 'Pass name is required.'); return; }
+    const res = await apiPost('update_gamepass', { gpid, gname, descr, benefit, price, sale });
+    if (!res.ok) { toast('err', res.message); return; }
+
+    toast('ok', res.message);
+    closeModal('m-editpass');
+    loadGamepasses(document.getElementById('gp-search').value.trim());
+    loadStats();
+    loadAudit();
+}
+
+async function deleteGamepass(gpid, gname) {
+    if (!canManageOperations()) { toast('err', 'Only staff/admin can delete passes.'); return; }
+    if (!confirm(`Delete game pass "${gname}"? This cannot be undone.`)) return;
+    const res = await apiPost('delete_gamepass', { gpid });
+    if (!res.ok) { toast('err', res.message); return; }
+
+    toast('ok', res.message);
+    loadGamepasses(document.getElementById('gp-search').value.trim());
+    loadStats();
+    loadAudit();
+}
+
+async function buyGamepass(gpid, gname) {
+    if ((CURRENT_USER?.role || '') !== 'user') {
+        toast('err', 'Only user accounts can buy game passes.');
+        return;
+    }
+
+    const res = await apiPost('buy_gamepass', { gpid });
+    if (!res.ok) {
+        toast('err', res.message);
+        return;
+    }
+
+    toast('ok', res.message || `Purchased "${gname}".`);
+    await Promise.all([
+        loadTransactions(),
+        loadGamepasses(document.getElementById('gp-search').value.trim()),
+        loadStats(),
+        loadAudit()
+    ]);
+}
+
+function printReceipt(gpid, gname) {
+    if ((CURRENT_USER?.role || '') !== 'user') {
+        toast('err', 'Receipt printing is available for user purchases only.');
+        return;
+    }
+
+    const tx = DB_TRANSACTIONS.find(r =>
+        r.uname === CURRENT_USER.username &&
+        Number(r.gpid) === Number(gpid) &&
+        Number(r.act) === 1
+    );
+    if (!tx) {
+        toast('err', 'No active purchase found for this game pass.');
+        return;
+    }
+
+    const gp = DB_GAMEPASSES.find(g => Number(g.gpid) === Number(gpid));
+    const priceLabel = Number(gp?.price) ? `R$ ${gp.price}` : 'Free';
+    const receiptNo = `RCPT-${String(gpid).padStart(4, '0')}-${Date.now().toString().slice(-6)}`;
+    const when = new Date().toLocaleString();
+
+    const w = window.open('', '_blank');
+    w.document.write(`<!DOCTYPE html><html><head><title>Purchase Receipt</title>
+    <style>
+        body{font-family:Arial,sans-serif;padding:26px;color:#111}
+        .wrap{max-width:560px;margin:0 auto;border:1px solid #ddd;border-radius:8px;padding:20px}
+        h1{font-size:20px;margin:0 0 8px}
+        .muted{color:#666;font-size:12px;margin-bottom:14px}
+        table{width:100%;border-collapse:collapse}
+        td{padding:8px 0;border-bottom:1px dashed #ddd;font-size:13px}
+        td:first-child{color:#555;width:42%}
+        .total{font-weight:700;font-size:15px}
+    </style></head><body>
+      <div class="wrap">
+        <h1>RBXGPM Purchase Receipt</h1>
+        <div class="muted">Receipt #${receiptNo}</div>
+        <table>
+          <tr><td>Buyer</td><td><b>${esc(CURRENT_USER.username)}</b></td></tr>
+          <tr><td>Game Pass</td><td><b>${esc(gname)}</b></td></tr>
+          <tr><td>Source</td><td>${esc(tx.src || 'purchase')}</td></tr>
+          <tr><td>Status</td><td>${Number(tx.act) === 1 ? 'Active' : 'Inactive'}</td></tr>
+          <tr><td>Issued At</td><td>${when}</td></tr>
+          <tr><td class="total">Amount</td><td class="total">${priceLabel}</td></tr>
+        </table>
+      </div>
+    </body></html>`);
+    w.document.close();
+    w.print();
 }
 
 /* close modal on backdrop click */
@@ -467,17 +642,15 @@ function genReport() {
             title.textContent = 'Audit Log Report';
             body.innerHTML = `<table>
                 <thead><tr>
-                    <th>ID</th><th>Action</th><th>Player</th><th>Pass</th>
-                    <th>Old Src</th><th>New Src</th><th>Old Act</th><th>New Act</th><th>Timestamp</th>
+                    <th>ID</th><th>Module</th><th>Action</th><th>Actor</th><th>Target</th><th>Details</th><th>Timestamp</th>
                 </tr></thead>
                 <tbody>${DB_AUDIT.map(a => `<tr>
                     <td>${esc(a.id)}</td>
+                    <td>${esc(a.module || 'system')}</td>
                     <td>${actionBadge(a.action)}</td>
-                    <td><b>${esc(a.uname)}</b></td>
-                    <td>${esc(a.gname)}</td>
-                    <td>${a.old_src ?? '&mdash;'}</td><td>${a.new_src ?? '&mdash;'}</td>
-                    <td>${a.old_act != null ? a.old_act : '&mdash;'}</td>
-                    <td>${a.new_act != null ? a.new_act : '&mdash;'}</td>
+                    <td><b>${esc(a.actor || '-')}</b></td>
+                    <td>${esc(a.target || '-')}</td>
+                    <td>${esc(a.details || '-')}</td>
                     <td style="font-size:.76rem;">${esc(a.ts)}</td>
                 </tr>`).join('')}</tbody>
             </table>`;
@@ -543,24 +716,62 @@ function toast(type, msg) {
 /* ========================================================
    PHP + MYSQL BACKEND
 ======================================================== */
-const API_URL = (() => {
-    /* Live Server (e.g., :5500) does not execute PHP; route API calls to Apache/XAMPP path. */
-    if (/^55\d{2}$/.test(window.location.port)) {
-        return `${window.location.protocol}//127.0.0.1/EDP/api.php`;
-    }
-    return new URL('api.php', window.location.href).href;
+const API_CANDIDATES = (() => {
+    const set = new Set([
+        new URL('api.php', window.location.href).href,
+        `${window.location.protocol}//127.0.0.1:8000/api.php`,
+        `${window.location.protocol}//localhost:8000/api.php`,
+        `${window.location.protocol}//127.0.0.1/EDP/api.php`,
+        `${window.location.protocol}//localhost/EDP/api.php`,
+    ]);
+    return Array.from(set);
 })();
+let API_URL = null;
+let API_DETECTION_PROMISE = null;
+
+async function resolveApiUrl() {
+    if (API_URL) return API_URL;
+    if (API_DETECTION_PROMISE) return API_DETECTION_PROMISE;
+
+    API_DETECTION_PROMISE = (async () => {
+        for (const candidate of API_CANDIDATES) {
+            try {
+                const probeBody = new URLSearchParams({ action: 'session' });
+                const res = await fetch(candidate, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    credentials: 'include',
+                    body: probeBody
+                });
+                const text = await res.text();
+                const parsed = JSON.parse(text);
+                if (parsed && typeof parsed === 'object' && Object.prototype.hasOwnProperty.call(parsed, 'ok')) {
+                    API_URL = candidate;
+                    return candidate;
+                }
+            } catch (error) {
+                /* try next candidate */
+            }
+        }
+        API_URL = new URL('api.php', window.location.href).href;
+        return API_URL;
+    })();
+
+    return API_DETECTION_PROMISE;
+}
 let ACCOUNT_ROWS = [];
 let CURRENT_USER = null;
 
 function roleLabel(role) {
-    if (role === 'admin')  return 'Super Administrator';
+    if (role === 'admin') return 'Super Administrator';
+    if (role === 'staff') return 'Staff';
     return 'User';
 }
 
 function roleBadge(role) {
     const map = {
         admin: ['b-delete',  'fa-shield-halved', 'Admin'],
+        staff: ['b-promo',   'fa-user-gear',     'Staff'],
         user:  ['b-unknown', 'fa-user',          'User'],
     };
     const [cls, icon, label] = map[role] || map.user;
@@ -578,8 +789,8 @@ function showLoggedInUser(user) {
     go('s-app');
     renderAll();
 
-    if (CURRENT_USER.role !== 'admin') {
-        toast('info', 'You are logged in as User. Account/Player creation in the dashboard requires admin login.');
+    if (CURRENT_USER.role === 'user') {
+        toast('info', 'User mode: you can buy on-sale game passes from the catalog.');
     }
 }
 
@@ -608,12 +819,13 @@ async function apiPost(action, data = {}) {
         };
     }
 
+    const activeApiUrl = await resolveApiUrl();
     const body = new URLSearchParams({ action });
     Object.entries(data).forEach(([key, value]) => body.append(key, value ?? ''));
 
     let response;
     try {
-        response = await fetch(API_URL, {
+        response = await fetch(activeApiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             credentials: 'include',
@@ -622,7 +834,7 @@ async function apiPost(action, data = {}) {
     } catch (error) {
         return {
             ok: false,
-            message: `Cannot reach API (${API_URL}). Run this through Apache/XAMPP and make sure api.php is accessible.`,
+            message: `Cannot reach API (${activeApiUrl}). Run this through Apache/XAMPP and make sure api.php is accessible.`,
         };
     }
 
@@ -632,7 +844,7 @@ async function apiPost(action, data = {}) {
     } catch (error) {
         return {
             ok: false,
-            message: text.trim() || `api.php did not return valid JSON from ${API_URL}. Please open this through XAMPP/Apache.`,
+            message: text.trim() || `api.php did not return valid JSON from ${activeApiUrl}. Please open this through XAMPP/Apache.`,
         };
     }
 }
@@ -779,23 +991,38 @@ async function recLookup() {
 
 function applyRoleUI(role) {
     const isAdmin = role === 'admin';
+    const isStaff = role === 'staff';
 
-    /* Sidebar items: admin sees all, users see only Dashboard + Game Passes */
-    const hiddenForUser = ['p-accounts', 'p-players', 'p-audit', 'p-reports', 'p-about'];
-    hiddenForUser.forEach(pid => {
+    const hidden = isAdmin
+        ? []
+        : isStaff
+            ? ['p-accounts']
+            : ['p-accounts', 'p-players', 'p-audit', 'p-reports'];
+
+    hidden.forEach(pid => {
         const nav = document.querySelector(`.sb-item[onclick*="${pid}"]`);
-        if (nav) nav.style.display = isAdmin ? '' : 'none';
+        if (nav) nav.style.display = 'none';
     });
+    if (!hidden.length) {
+        document.querySelectorAll('.sb-item').forEach(nav => {
+            nav.style.display = '';
+        });
+    } else if (isStaff) {
+        document.querySelectorAll('.sb-item').forEach(nav => {
+            const onclick = nav.getAttribute('onclick') || '';
+            if (!onclick.includes('p-accounts')) nav.style.display = '';
+        });
+    }
 
-    /* Admin-only action buttons (Add Player, ban/unban, etc.) */
+    /* Operations-only action buttons (staff/admin: player + catalog management). */
     document.querySelectorAll('.admin-action').forEach(el => {
-        el.style.display = isAdmin ? '' : 'none';
+        el.style.display = canManageOperations() ? '' : 'none';
     });
 
-    /* If non-admin is on a restricted page, redirect to dashboard */
-    const restricted = hiddenForUser;
+    /* If current role is on a restricted page, redirect to dashboard. */
+    const restricted = hidden;
     const activePage = document.querySelector('.page.active');
-    if (!isAdmin && activePage && restricted.some(pid => activePage.id === pid)) {
+    if (activePage && restricted.some(pid => activePage.id === pid)) {
         const dashNav = document.querySelector('.sb-item[onclick*="p-dash"]');
         if (dashNav) showPage('p-dash', dashNav);
     }
@@ -805,18 +1032,25 @@ async function renderAll() {
     updateDate();
     await loadGamepasses();
     const tasks = [loadStats(), loadTransactions()];
-    if (canManageAccounts()) {
-        tasks.push(loadPlayers(), loadAudit(), loadAccounts());
+    if (canManageOperations()) {
+        tasks.push(loadPlayers(), loadAudit());
+    }
+    if (canManageAdminAccounts()) {
+        tasks.push(loadAccounts());
     }
     await Promise.all(tasks);
 }
 
-function canManageAccounts() {
+function canManageAdminAccounts() {
     return CURRENT_USER?.role === 'admin';
 }
 
+function canManageOperations() {
+    return ['admin', 'staff'].includes(CURRENT_USER?.role || '');
+}
+
 async function loadAccounts(search = '') {
-    if (!canManageAccounts()) return;
+    if (!canManageAdminAccounts()) return;
 
     const res = await apiPost('accounts', { search });
     if (!res.ok) {
@@ -831,7 +1065,7 @@ async function loadAccounts(search = '') {
 function renderAccounts(data) {
     const tb = document.getElementById('tb-accounts');
     if (!tb) return;
-    const isAdmin = canManageAccounts();
+    const isAdmin = canManageAdminAccounts();
     const addButton = document.getElementById('acc-add-btn');
     if (addButton) addButton.style.display = isAdmin ? 'inline-flex' : 'none';
 
@@ -878,7 +1112,7 @@ function filterAccounts() {
 }
 
 async function addAccount() {
-    if (!canManageAccounts()) { toast('err', 'Only admin can add accounts.'); return; }
+    if (!canManageAdminAccounts()) { toast('err', 'Only admin can add accounts.'); return; }
 
     const username = document.getElementById('aa-user').value.trim();
     const pass = document.getElementById('aa-pass').value;
@@ -898,7 +1132,7 @@ async function addAccount() {
         email: document.getElementById('aa-email').value.trim(),
         birthday: document.getElementById('aa-birthday').value,
         gender: document.querySelector('#m-addaccount .gender-btn.picked')?.dataset.value || '',
-        role: 'user',
+        role: document.getElementById('aa-role')?.value || 'user',
         status: 'active',
         password: pass,
         confirm_password: confirm
@@ -910,16 +1144,18 @@ async function addAccount() {
 
         toast('ok', res.message);
         ['aa-user','aa-name','aa-email','aa-birthday','aa-pass','aa-confirm'].forEach(id => document.getElementById(id).value = '');
+        if (document.getElementById('aa-role')) document.getElementById('aa-role').value = 'user';
         document.querySelectorAll('#m-addaccount .gender-btn').forEach(b => b.classList.remove('picked'));
         closeModal('m-addaccount');
         loadAccounts(document.getElementById('acc-search').value.trim());
+        loadAudit();
     } catch (error) {
         toast('err', 'Unable to connect to api.php.');
     }
 }
 
 function openEditAccount(uid) {
-    if (!canManageAccounts()) { toast('err', 'Only admin can edit accounts.'); return; }
+    if (!canManageAdminAccounts()) { toast('err', 'Only admin can edit accounts.'); return; }
     const account = ACCOUNT_ROWS.find(a => Number(a.uid) === Number(uid));
     if (!account) return;
 
@@ -949,7 +1185,7 @@ function openEditAccount(uid) {
 }
 
 async function updateAccount() {
-    if (!canManageAccounts()) { toast('err', 'Only admin can update accounts.'); return; }
+    if (!canManageAdminAccounts()) { toast('err', 'Only admin can update accounts.'); return; }
     const data = {
         uid: document.getElementById('ea-uid').value,
         username: document.getElementById('ea-user').value.trim(),
@@ -969,19 +1205,21 @@ async function updateAccount() {
     toast('ok', res.message);
     closeModal('m-editaccount');
     loadAccounts(document.getElementById('acc-search').value.trim());
+    loadAudit();
 }
 
 async function setAccountStatus(uid, status) {
-    if (!canManageAccounts()) { toast('err', 'Only admin can update account status.'); return; }
+    if (!canManageAdminAccounts()) { toast('err', 'Only admin can update account status.'); return; }
     const res = await apiPost('set_status', { uid, status });
     if (!res.ok) { toast('err', res.message); return; }
 
     toast('ok', res.message);
     loadAccounts(document.getElementById('acc-search').value.trim());
+    loadAudit();
 }
 
 async function deleteAccount(uid, username) {
-    if (!canManageAccounts()) { toast('err', 'Only admin can delete accounts.'); return; }
+    if (!canManageAdminAccounts()) { toast('err', 'Only admin can delete accounts.'); return; }
     if (!confirm(`Delete account "${username}"? This cannot be undone.`)) return;
 
     const res = await apiPost('delete_account', { uid });
@@ -989,6 +1227,7 @@ async function deleteAccount(uid, username) {
 
     toast('ok', res.message);
     loadAccounts(document.getElementById('acc-search').value.trim());
+    loadAudit();
 }
 
 document.addEventListener('DOMContentLoaded', async () => {

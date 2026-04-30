@@ -393,16 +393,21 @@
             <div class="card">
                 <div class="card-head">
                     <h3>Pass Catalog</h3>
-                    <div class="search-wrap">
-                        <i class="fa-solid fa-magnifying-glass"></i>
-                        <input type="text" id="gp-search" placeholder="Search passes…" oninput="filterGP()">
+                    <div class="act-right">
+                        <div class="search-wrap">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="gp-search" placeholder="Search passes…" oninput="filterGP()">
+                        </div>
+                        <button class="btn btn-red admin-action" onclick="openModal('m-addpass')" style="padding:8px 14px;font-size:.78rem;">
+                            <i class="fa-solid fa-plus"></i> Add Pass
+                        </button>
                     </div>
                 </div>
                 <div class="tbl-wrap">
                     <table>
                         <thead><tr>
                             <th>#</th><th>Pass Name</th><th>Description</th>
-                            <th>Price (R$)</th><th>Benefit</th><th>Sale</th>
+                            <th>Price (R$)</th><th>Benefit</th><th>Sale</th><th>Actions</th>
                         </tr></thead>
                         <tbody id="tb-gp"></tbody>
                     </table>
@@ -424,9 +429,8 @@
                 <div class="tbl-wrap">
                     <table>
                         <thead><tr>
-                            <th>ID</th><th>Action</th><th>Player</th><th>Pass</th>
-                            <th>Old Source</th><th>New Source</th>
-                            <th>Old Status</th><th>New Status</th><th>Timestamp</th>
+                            <th>ID</th><th>Module</th><th>Action</th><th>Actor</th>
+                            <th>Target</th><th>Details</th><th>Timestamp</th>
                         </tr></thead>
                         <tbody id="tb-audit"></tbody>
                     </table>
@@ -650,7 +654,13 @@
             </div>
         </div>
         <div class="account-defaults">
-            <span><i class="fa-solid fa-user"></i> Role: User</span>
+            <span>
+                <i class="fa-solid fa-user"></i> Role:
+                <select id="aa-role" style="margin-left:6px;padding:2px 6px;background:var(--bg-input);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+                    <option value="user">User</option>
+                    <option value="staff">Staff</option>
+                </select>
+            </span>
             <span><i class="fa-solid fa-circle-check"></i> Status: Active</span>
         </div>
         <div class="modal-foot">
@@ -663,62 +673,166 @@
 <!-- ================================================================
      MODAL: UPDATE ACCOUNT
 ================================================================ -->
-<div class="modal-bg" id="m-editaccount">
+<div class="modal-bg account-auth-modal" id="m-editaccount">
     <div class="modal">
         <div class="modal-head">
-            <h3><i class="fa-solid fa-pen" style="color:var(--blue);"></i> Update Account</h3>
+            <h3><i class="fa-solid fa-pen" style="color:var(--blue);"></i> Edit User Account</h3>
             <button class="modal-close" onclick="closeModal('m-editaccount')"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="account-modal-brand">
+            <div class="logo-text">RBX<span>GPM</span></div>
+            <div class="logo-sub">Quick Account Update</div>
         </div>
         <input type="hidden" id="ea-uid">
         <div class="form-group">
             <label>Username</label>
             <input type="text" id="ea-user">
         </div>
-        <div class="form-group">
-            <label>Full Name</label>
-            <input type="text" id="ea-name">
+        <div class="account-profile-grid">
+            <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" id="ea-name">
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="ea-email">
+            </div>
         </div>
-        <div class="form-group">
-            <label>Email</label>
-            <input type="email" id="ea-email">
+        <div class="account-profile-grid">
+            <div class="form-group">
+                <label>Birthday</label>
+                <input type="date" id="ea-birthday">
+            </div>
+            <div class="form-group">
+                <label>Gender</label>
+                <select id="ea-gender">
+                    <option value="">Prefer not to say</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                </select>
+            </div>
         </div>
-        <div class="form-group">
-            <label>Birthday</label>
-            <input type="date" id="ea-birthday">
-        </div>
-        <div class="form-group">
-            <label>Gender</label>
-            <select id="ea-gender">
-                <option value="">Prefer not to say</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Role</label>
-            <select id="ea-role">
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Status</label>
-            <select id="ea-status">
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-            </select>
+        <div class="account-profile-grid">
+            <div class="form-group">
+                <label>Role</label>
+                <select id="ea-role">
+                    <option value="user">User</option>
+                    <option value="staff">Staff</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Status</label>
+                <select id="ea-status">
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                </select>
+            </div>
         </div>
         <div class="form-group">
             <label>New Password <span style="color:var(--text-3);font-weight:400;">(optional)</span></label>
-            <input type="password" id="ea-pass" placeholder="Leave blank to keep current">
+            <div class="field-wrap">
+                <input type="password" id="ea-pass" placeholder="Leave blank to keep current">
+                <i class="fa-solid fa-eye eye" onclick="toggleEye('ea-pass',this)"></i>
+            </div>
         </div>
         <div class="form-group">
             <label>Confirm New Password</label>
-            <input type="password" id="ea-confirm" placeholder="Repeat new password">
+            <div class="field-wrap">
+                <input type="password" id="ea-confirm" placeholder="Repeat new password">
+                <i class="fa-solid fa-eye eye" onclick="toggleEye('ea-confirm',this)"></i>
+            </div>
+        </div>
+        <div class="account-defaults">
+            <span><i class="fa-solid fa-shield"></i> Admin-only action</span>
+            <span><i class="fa-solid fa-clock-rotate-left"></i> Saved to audit log</span>
         </div>
         <div class="modal-foot">
             <button class="btn btn-ghost" onclick="closeModal('m-editaccount')">Cancel</button>
             <button class="btn btn-blue" onclick="updateAccount()">Save Changes</button>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     MODAL: ADD GAME PASS
+================================================================ -->
+<div class="modal-bg account-auth-modal" id="m-addpass">
+    <div class="modal">
+        <div class="modal-head">
+            <h3><i class="fa-solid fa-ticket" style="color:var(--red);"></i> Add Game Pass</h3>
+            <button class="modal-close" onclick="closeModal('m-addpass')"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="form-group">
+            <label>Pass Name</label>
+            <input type="text" id="gp-name" maxlength="80" placeholder="e.g. VIP">
+        </div>
+        <div class="form-group">
+            <label>Description</label>
+            <input type="text" id="gp-desc" maxlength="255" placeholder="Short description">
+        </div>
+        <div class="account-profile-grid">
+            <div class="form-group">
+                <label>Price (R$)</label>
+                <input type="number" min="0" id="gp-price" value="0">
+            </div>
+            <div class="form-group">
+                <label>Benefit</label>
+                <input type="text" id="gp-benefit" maxlength="80" placeholder="e.g. VIP Tag">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Sale Status</label>
+            <select id="gp-sale">
+                <option value="1">On Sale</option>
+                <option value="0">Off Sale</option>
+            </select>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn-ghost" onclick="closeModal('m-addpass')">Cancel</button>
+            <button class="btn btn-red" onclick="addGamepass()">Add Pass</button>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     MODAL: EDIT GAME PASS
+================================================================ -->
+<div class="modal-bg account-auth-modal" id="m-editpass">
+    <div class="modal">
+        <div class="modal-head">
+            <h3><i class="fa-solid fa-pen" style="color:var(--blue);"></i> Edit Game Pass</h3>
+            <button class="modal-close" onclick="closeModal('m-editpass')"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <input type="hidden" id="egp-id">
+        <div class="form-group">
+            <label>Pass Name</label>
+            <input type="text" id="egp-name" maxlength="80">
+        </div>
+        <div class="form-group">
+            <label>Description</label>
+            <input type="text" id="egp-desc" maxlength="255">
+        </div>
+        <div class="account-profile-grid">
+            <div class="form-group">
+                <label>Price (R$)</label>
+                <input type="number" min="0" id="egp-price">
+            </div>
+            <div class="form-group">
+                <label>Benefit</label>
+                <input type="text" id="egp-benefit" maxlength="80">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Sale Status</label>
+            <select id="egp-sale">
+                <option value="1">On Sale</option>
+                <option value="0">Off Sale</option>
+            </select>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn-ghost" onclick="closeModal('m-editpass')">Cancel</button>
+            <button class="btn btn-blue" onclick="updateGamepass()">Save Changes</button>
         </div>
     </div>
 </div>
