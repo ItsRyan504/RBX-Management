@@ -284,12 +284,10 @@ CREATE TABLE IF NOT EXISTS `accounts` (
 -- Dumping data for table `accounts`
 -- Default logins:
 -- admin / admin123
--- root / root
 --
 
 INSERT IGNORE INTO `accounts` (`uid`, `username`, `password_hash`, `full_name`, `email`, `birthday`, `gender`, `role`, `status`, `created_at`, `updated_at`) VALUES
-(1, 'admin', '$2y$10$SCZCxQKxAMn2KgNAOkUIsOOk1gD0xXykmWkHETg1dBmu0PxoUQumW', 'System Administrator', 'admin@rbxgpm.local', NULL, NULL, 'admin', 'active', current_timestamp(), current_timestamp()),
-(2, 'root', '$2y$10$L6e87xonS41zb59U5tV7SOLpSXTlxPl8TZu0qG2Jiw1DjFtF6/Wry', 'Root Account', 'root@rbxgpm.local', NULL, NULL, 'admin', 'active', current_timestamp(), current_timestamp());
+(1, 'admin', '$2y$10$SCZCxQKxAMn2KgNAOkUIsOOk1gD0xXykmWkHETg1dBmu0PxoUQumW', 'System Administrator', 'admin@rbxgpm.local', NULL, NULL, 'admin', 'active', current_timestamp(), current_timestamp());
 
 -- --------------------------------------------------------
 

@@ -20,6 +20,7 @@ class MySQLConnection
         );
 
         $this->conn->set_charset('utf8mb4');
+        $this->conn->autocommit(true);
     }
 
     public function getConnection(): mysqli

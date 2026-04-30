@@ -30,60 +30,18 @@ function closeSidebar() {
 }
 
 /* ========================================================
-   DATA  (mirrors the SQL dump)
+   DATA — loaded live from MySQL via api.php
 ======================================================== */
-const PLAYERS = [
-    { pid:1,  uname:'FreeSkin',     jdate:'2025-01-01', stat:'active' },
-    { pid:2,  uname:'MoonByte',     jdate:'2025-01-02', stat:'active' },
-    { pid:3,  uname:'PixelNova',    jdate:'2025-01-03', stat:'active' },
-    { pid:4,  uname:'RbxRanger',    jdate:'2025-01-04', stat:'active' },
-    { pid:5,  uname:'KaitoDev',     jdate:'2025-01-05', stat:'active' },
-    { pid:6,  uname:'LavaLynx',     jdate:'2025-01-06', stat:'active' },
-    { pid:7,  uname:'NeonWarden',   jdate:'2025-01-07', stat:'active' },
-    { pid:8,  uname:'SushiSamurai', jdate:'2025-01-08', stat:'active' },
-    { pid:9,  uname:'CloudCrate',   jdate:'2025-01-09', stat:'banned'  },
-    { pid:10, uname:'AstraPanda',   jdate:'2025-01-10', stat:'active'  },
-];
+let DB_PLAYERS = [];
+let DB_GAMEPASSES = [];
+let DB_TRANSACTIONS = [];
+let DB_AUDIT = [];
 
-const GAMEPASSES = [
-    { gpid:1,  gname:'vip',         descr:'VIP tag',           price:199, sale:1, benefit:'VIP Tag' },
-    { gpid:2,  gname:'x2coins',     descr:'Double coins',      price:299, sale:1, benefit:'Coin Multiplier x2' },
-    { gpid:3,  gname:'x2xp',        descr:'Double XP',         price:249, sale:1, benefit:'XP Multiplier x2' },
-    { gpid:4,  gname:'invplus',     descr:'+50 inventory slots',price:149, sale:1, benefit:'+50 Inventory Slots' },
-    { gpid:5,  gname:'speed',       descr:'+10% walk speed',   price:179, sale:1, benefit:'+10% Speed Bonus' },
-    { gpid:6,  gname:'petslot',     descr:'+1 pet equip slot', price:129, sale:1, benefit:'+1 Pet Slot' },
-    { gpid:7,  gname:'autocollect', descr:'Auto pick-up items',price:399, sale:1, benefit:'Auto Collect' },
-    { gpid:8,  gname:'teleport',    descr:'Teleport menu',     price:99,  sale:1, benefit:'Teleport Menu' },
-    { gpid:9,  gname:'goldname',    descr:'Gold name color',   price:59,  sale:1, benefit:'Gold Name Color' },
-    { gpid:10, gname:'giftpack',    descr:'Admin starter pack',price:0,   sale:0, benefit:'Bundle PackA' },
-];
-
-const PG = [   /* player_gamepasses */
-    { pid:1,  gpid:1,  src:'purchase', act:1 },
-    { pid:2,  gpid:2,  src:'purchase', act:1 },
-    { pid:3,  gpid:3,  src:'gift',     act:1 },
-    { pid:4,  gpid:4,  src:'purchase', act:1 },
-    { pid:5,  gpid:5,  src:'purchase', act:1 },
-    { pid:6,  gpid:6,  src:'promo',    act:1 },
-    { pid:7,  gpid:7,  src:'purchase', act:1 },
-    { pid:8,  gpid:8,  src:'purchase', act:1 },
-    { pid:9,  gpid:9,  src:'purchase', act:0 },
-    { pid:10, gpid:10, src:'admin',    act:1 },
-];
-
-const AUDIT = [
-    { id:1, action:'INSERT', pid:1, gpid:4, o_src:null,       n_src:'purchase', o_act:null, n_act:1,    ts:'2026-03-11 13:29:05' },
-    { id:2, action:'UPDATE', pid:1, gpid:4, o_src:'purchase', n_src:'purchase', o_act:1,    n_act:0,    ts:'2026-03-11 13:30:42' },
-    { id:3, action:'UPDATE', pid:1, gpid:4, o_src:'purchase', n_src:'gifting',  o_act:0,    n_act:0,    ts:'2026-03-11 13:31:26' },
-    { id:4, action:'DELETE', pid:1, gpid:4, o_src:'gifting',  n_src:null,       o_act:0,    n_act:null, ts:'2026-03-11 13:32:13' },
-];
+// legacy badge helpers kept for reports
 
 /* ========================================================
    HELPERS
 ======================================================== */
-const pname  = pid  => PLAYERS.find(p => p.pid  === pid)?.uname  || `PID ${pid}`;
-const gpname = gpid => GAMEPASSES.find(g => g.gpid === gpid)?.gname || `GP ${gpid}`;
-const pcount = pid  => PG.filter(x => x.pid === pid && x.act === 1).length;
 
 const srcBadge = s =>
     `<span class="badge b-${s ?? 'unknown'}">${s ?? '&mdash;'}</span>`;
@@ -145,30 +103,45 @@ function initBirthdayDropdowns() {
         'January','February','March','April','May','June',
         'July','August','September','October','November','December'
     ];
-    const mSel = document.getElementById('su-month');
-    months.forEach((m, i) => {
-        const o = document.createElement('option');
-        o.value       = String(i + 1).padStart(2, '0');
-        o.textContent = m;
-        mSel.appendChild(o);
-    });
-
-    const dSel = document.getElementById('su-day');
-    for (let d = 1; d <= 31; d++) {
-        const o = document.createElement('option');
-        o.value       = String(d).padStart(2, '0');
-        o.textContent = d;
-        dSel.appendChild(o);
-    }
-
-    const ySel    = document.getElementById('su-year');
     const curYear = new Date().getFullYear();
-    for (let y = curYear; y >= 1900; y--) {
-        const o = document.createElement('option');
-        o.value       = y;
-        o.textContent = y;
-        ySel.appendChild(o);
-    }
+    const groups = [
+        ['su-month', 'su-day', 'su-year'],
+    ];
+
+    groups.forEach(([monthId, dayId, yearId]) => {
+        const mSel = document.getElementById(monthId);
+        const dSel = document.getElementById(dayId);
+        const ySel = document.getElementById(yearId);
+        if (!mSel || !dSel || !ySel) return;
+        if (mSel.options.length > 1 && dSel.options.length > 1 && ySel.options.length > 1) {
+            return;
+        }
+
+        mSel.innerHTML = '<option value="">Month</option>';
+        dSel.innerHTML = '<option value="">Day</option>';
+        ySel.innerHTML = '<option value="">Year</option>';
+
+        months.forEach((m, i) => {
+            const o = document.createElement('option');
+            o.value       = String(i + 1).padStart(2, '0');
+            o.textContent = m;
+            mSel.appendChild(o);
+        });
+
+        for (let d = 1; d <= 31; d++) {
+            const o = document.createElement('option');
+            o.value       = String(d).padStart(2, '0');
+            o.textContent = d;
+            dSel.appendChild(o);
+        }
+
+        for (let y = curYear; y >= 1900; y--) {
+            const o = document.createElement('option');
+            o.value       = y;
+            o.textContent = y;
+            ySel.appendChild(o);
+        }
+    });
 }
 
 function suStrength() {
@@ -188,7 +161,7 @@ function suStrength() {
 }
 
 function pickGender(el) {
-    document.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('picked'));
+    el.closest('.gender-row')?.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('picked'));
     el.classList.add('picked');
 }
 
@@ -223,26 +196,30 @@ function updateDate() {
         new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function renderTx() {
-    document.getElementById('tb-tx').innerHTML = PG.map(r => `
+function renderTx(data) {
+    const tb = document.getElementById('tb-tx');
+    if (!data || !data.length) {
+        tb.innerHTML = '<tr><td colspan="4"><div class="empty"><i class="fa-solid fa-receipt"></i><p>No transactions found.</p></div></td></tr>';
+        return;
+    }
+    tb.innerHTML = data.map(r => `
         <tr>
-            <td><b>${pname(r.pid)}</b></td>
-            <td><span class="ptag"><i class="fa-solid fa-ticket"></i>${gpname(r.gpid)}</span></td>
+            <td><b>${esc(r.uname)}</b></td>
+            <td><span class="ptag"><i class="fa-solid fa-ticket"></i>${esc(r.gname)}</span></td>
             <td>${srcBadge(r.src)}</td>
-            <td>${actBadge(r.act)}</td>
+            <td>${actBadge(Number(r.act))}</td>
         </tr>`).join('');
 }
 
-function renderPriceBars() {
-    const max = Math.max(...GAMEPASSES.map(g => g.price));
-    document.getElementById('price-bars').innerHTML = GAMEPASSES.map(g => {
-        const pct = max > 0 ? Math.round(g.price / max * 100) : 4;
+function renderPriceBars(data) {
+    if (!data || !data.length) return;
+    const max = Math.max(...data.map(g => Number(g.price)));
+    document.getElementById('price-bars').innerHTML = data.map(g => {
+        const pct = max > 0 ? Math.round(Number(g.price) / max * 100) : 4;
         return `<div class="bar-item">
-            <div class="bar-name">${g.gname}</div>
-            <div class="bar-track">
-                <div class="bar-fill" style="width:${pct}%"></div>
-            </div>
-            <div class="bar-val">${g.price ? 'R$' + g.price : 'Free'}</div>
+            <div class="bar-name">${esc(g.gname)}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+            <div class="bar-val">${Number(g.price) ? 'R$' + g.price : 'Free'}</div>
         </div>`;
     }).join('');
 }
@@ -253,19 +230,20 @@ function renderPlayers(data) {
         tb.innerHTML = '<tr><td colspan="6"><div class="empty"><i class="fa-solid fa-users-slash"></i><p>No players found.</p></div></td></tr>';
         return;
     }
+    const canEdit = canManageAccounts();
     tb.innerHTML = data.map(p => `
         <tr>
-            <td style="color:var(--text-3);font-size:.78rem;">${p.pid}</td>
-            <td><b>${p.uname}</b></td>
-            <td style="color:var(--text-2);">${p.jdate}</td>
+            <td style="color:var(--text-3);font-size:.78rem;">${esc(p.pid)}</td>
+            <td><b>${esc(p.uname)}</b></td>
+            <td style="color:var(--text-2);">${esc(p.jdate)}</td>
             <td>${actBadge(p.stat === 'active' ? 1 : 0, p.stat)}</td>
-            <td><span class="ptag"><i class="fa-solid fa-ticket"></i>${pcount(p.pid)} pass${pcount(p.pid) !== 1 ? 'es' : ''}</span></td>
+            <td><span class="ptag"><i class="fa-solid fa-ticket"></i>${esc(p.pass_count ?? 0)} pass${(p.pass_count ?? 0) != 1 ? 'es' : ''}</span></td>
             <td>
-                <button class="btn btn-ghost" onclick="toggleBan(${p.pid})"
+                ${canEdit ? `<button class="btn btn-ghost" onclick="toggleBan(${Number(p.pid)}, '${jsString(p.uname)}', '${jsString(p.stat)}')"
                         style="padding:5px 11px;font-size:.75rem;">
                     <i class="fa-solid fa-${p.stat === 'active' ? 'ban' : 'rotate-left'}"></i>
                     ${p.stat === 'active' ? 'Ban' : 'Unban'}
-                </button>
+                </button>` : `<span style="color:var(--text-3);font-size:.76rem;"><i class="fa-solid fa-eye"></i> View only</span>`}
             </td>
         </tr>`).join('');
 }
@@ -278,60 +256,115 @@ function renderGP(data) {
     }
     tb.innerHTML = data.map(g => `
         <tr>
-            <td style="color:var(--text-3);font-size:.78rem;">${g.gpid}</td>
-            <td><b>${g.gname}</b></td>
-            <td style="color:var(--text-2);">${g.descr}</td>
-            <td style="font-weight:800;color:var(--yellow);">${g.price ? 'R$ ' + g.price : '<span style="color:var(--green);">Free</span>'}</td>
-            <td><span class="ptag">${g.benefit}</span></td>
-            <td><span class="badge ${g.sale ? 'b-on' : 'b-off'}"><span class="badge-dot"></span>${g.sale ? 'On Sale' : 'Off Sale'}</span></td>
+            <td style="color:var(--text-3);font-size:.78rem;">${esc(g.gpid)}</td>
+            <td><b>${esc(g.gname)}</b></td>
+            <td style="color:var(--text-2);">${esc(g.descr)}</td>
+            <td style="font-weight:800;color:var(--yellow);">${Number(g.price) ? 'R$ ' + g.price : '<span style="color:var(--green);">Free</span>'}</td>
+            <td><span class="ptag">${esc(g.benefit)}</span></td>
+            <td><span class="badge ${Number(g.sale) ? 'b-on' : 'b-off'}"><span class="badge-dot"></span>${Number(g.sale) ? 'On Sale' : 'Off Sale'}</span></td>
         </tr>`).join('');
 }
 
-function renderAudit() {
-    document.getElementById('tb-audit').innerHTML = AUDIT.map(a => `
+function renderAudit(data) {
+    const tb = document.getElementById('tb-audit');
+    if (!data || !data.length) {
+        tb.innerHTML = '<tr><td colspan="9"><div class="empty"><i class="fa-solid fa-clock-rotate-left"></i><p>No audit records.</p></div></td></tr>';
+        return;
+    }
+    tb.innerHTML = data.map(a => `
         <tr>
-            <td style="color:var(--text-3);font-size:.78rem;">${a.id}</td>
+            <td style="color:var(--text-3);font-size:.78rem;">${esc(a.id)}</td>
             <td>${actionBadge(a.action)}</td>
-            <td><b>${pname(a.pid)}</b></td>
-            <td><span class="ptag"><i class="fa-solid fa-ticket"></i>${gpname(a.gpid)}</span></td>
-            <td style="color:var(--text-2);">${a.o_src ?? '&mdash;'}</td>
-            <td style="color:var(--text-2);">${a.n_src ?? '&mdash;'}</td>
-            <td>${a.o_act != null ? actBadge(a.o_act) : '&mdash;'}</td>
-            <td>${a.n_act != null ? actBadge(a.n_act) : '&mdash;'}</td>
-            <td style="color:var(--text-3);font-size:.76rem;">${a.ts}</td>
+            <td><b>${esc(a.uname)}</b></td>
+            <td><span class="ptag"><i class="fa-solid fa-ticket"></i>${esc(a.gname)}</span></td>
+            <td style="color:var(--text-2);">${a.old_src ?? '&mdash;'}</td>
+            <td style="color:var(--text-2);">${a.new_src ?? '&mdash;'}</td>
+            <td>${a.old_act != null ? actBadge(Number(a.old_act)) : '&mdash;'}</td>
+            <td>${a.new_act != null ? actBadge(Number(a.new_act)) : '&mdash;'}</td>
+            <td style="color:var(--text-3);font-size:.76rem;">${esc(a.ts)}</td>
         </tr>`).join('');
+}
+
+function updateDashStats(s) {
+    if (!s) return;
+    const vals = document.querySelectorAll('.si-val');
+    if (vals[0]) vals[0].textContent = s.total;
+    if (vals[1]) vals[1].textContent = s.active;
+    if (vals[2]) vals[2].textContent = s.banned;
+    if (vals[3]) vals[3].textContent = s.passes;
+    if (vals[4]) vals[4].textContent = 'R$' + s.revenue;
+    const subs = document.querySelectorAll('.si-sub');
+    if (subs[0]) subs[0].textContent = 'All registered players';
+    if (subs[1]) subs[1].textContent = (s.total > 0 ? Math.round(s.active/s.total*100) : 0) + '% activity rate';
+    if (subs[2]) subs[2].textContent = s.banned + ' banned';
+    if (subs[3]) subs[3].textContent = s.onsale + ' currently on sale';
+    if (subs[4]) subs[4].textContent = 'From active purchases';
 }
 
 /* ========================================================
    PLAYER ACTIONS
 ======================================================== */
+async function loadPlayers(search = '') {
+    const res = await apiPost('players', { search });
+    if (!res.ok) { toast('err', res.message); return; }
+    DB_PLAYERS = res.players || [];
+    renderPlayers(DB_PLAYERS);
+}
+
+async function loadGamepasses(search = '') {
+    const res = await apiPost('gamepasses', { search });
+    if (!res.ok) { toast('err', res.message); return; }
+    DB_GAMEPASSES = res.gamepasses || [];
+    renderGP(DB_GAMEPASSES);
+}
+
+async function loadTransactions() {
+    const res = await apiPost('transactions');
+    if (!res.ok) return;
+    DB_TRANSACTIONS = res.transactions || [];
+    renderTx(DB_TRANSACTIONS);
+    renderPriceBars(DB_GAMEPASSES);
+}
+
+async function loadAudit() {
+    const res = await apiPost('audit');
+    if (!res.ok) return;
+    DB_AUDIT = res.audit || [];
+    renderAudit(DB_AUDIT);
+}
+
+async function loadStats() {
+    const res = await apiPost('stats');
+    if (res.ok) updateDashStats(res.stats);
+}
+
 function filterPlayers() {
-    const q = document.getElementById('pl-search').value.toLowerCase();
-    renderPlayers(PLAYERS.filter(p =>
-        p.uname.toLowerCase().includes(q) || p.stat.includes(q)
-    ));
+    loadPlayers(document.getElementById('pl-search').value.trim());
 }
 
 function filterGP() {
-    const q = document.getElementById('gp-search').value.toLowerCase();
-    renderGP(GAMEPASSES.filter(g =>
-        g.gname.toLowerCase().includes(q) ||
-        g.descr.toLowerCase().includes(q) ||
-        g.benefit.toLowerCase().includes(q)
-    ));
+    loadGamepasses(document.getElementById('gp-search').value.trim());
 }
 
-function toggleBan(pid) {
-    const p = PLAYERS.find(x => x.pid === pid);
-    if (!p) return;
-    p.stat = p.stat === 'active' ? 'banned' : 'active';
-    renderPlayers(PLAYERS);
-    toast(p.stat === 'banned' ? 'err' : 'ok',
-        `${p.uname} has been ${p.stat === 'banned' ? 'banned' : 'unbanned'}.`);
+async function toggleBan(pid, uname, currentStat) {
+    if (!canManageAccounts()) { toast('err', 'Only admin can update players.'); return; }
+    const newStat = currentStat === 'active' ? 'banned' : 'active';
+    const res = await apiPost('toggle_player_status', { pid, stat: newStat });
+    if (!res.ok) { toast('err', res.message); return; }
+    toast(newStat === 'banned' ? 'err' : 'ok',
+        `${uname} has been ${newStat === 'banned' ? 'banned' : 'unbanned'}.`);
+    loadPlayers(document.getElementById('pl-search').value.trim());
 }
 
 function openModal(id) {
-    document.getElementById('ap-date').value = new Date().toISOString().split('T')[0];
+    if (id === 'm-addaccount') initBirthdayDropdowns();
+
+    const apDate = document.getElementById('ap-date');
+    if (apDate) apDate.value = new Date().toISOString().split('T')[0];
+    const aaBirthday = document.getElementById('aa-birthday');
+    if (id === 'm-addaccount' && aaBirthday) {
+        aaBirthday.max = new Date().toISOString().split('T')[0];
+    }
     document.getElementById(id).classList.add('open');
 }
 
@@ -339,17 +372,19 @@ function closeModal(id) {
     document.getElementById(id).classList.remove('open');
 }
 
-function addPlayer() {
-    const name = document.getElementById('ap-name').value.trim();
-    const date = document.getElementById('ap-date').value;
-    const stat = document.getElementById('ap-status').value;
-    if (!name) { toast('err', 'Username is required.'); return; }
-    const newPid = Math.max(...PLAYERS.map(p => p.pid)) + 1;
-    PLAYERS.push({ pid: newPid, uname: name, jdate: date, stat });
-    renderPlayers(PLAYERS);
-    closeModal('m-addplayer');
-    toast('ok', `Player "${name}" added successfully!`);
+async function addPlayer() {
+    if (!canManageAccounts()) { toast('err', 'Only admin can add players.'); return; }
+    const uname = document.getElementById('ap-name').value.trim();
+    const jdate = document.getElementById('ap-date').value;
+    const stat  = document.getElementById('ap-status').value;
+    if (!uname) { toast('err', 'Username is required.'); return; }
+    const res = await apiPost('add_player', { uname, jdate, stat });
+    if (!res.ok) { toast('err', res.message); return; }
+    toast('ok', `Player "${uname}" added successfully!`);
     document.getElementById('ap-name').value = '';
+    closeModal('m-addplayer');
+    loadPlayers();
+    loadStats();
 }
 
 /* close modal on backdrop click */
@@ -382,20 +417,20 @@ function genReport() {
         case 'player-summary':
             title.textContent = 'Player Summary Report';
             body.innerHTML = `<table>
-                <thead><tr><th>PID</th><th>Username</th><th>Join Date</th><th>Status</th><th>Owned Passes</th></tr></thead>
-                <tbody>${PLAYERS.map(p => `<tr>
-                    <td>${p.pid}</td><td><b>${p.uname}</b></td><td>${p.jdate}</td>
+                <thead><tr><th>PID</th><th>Username</th><th>Join Date</th><th>Status</th><th>Passes</th></tr></thead>
+                <tbody>${DB_PLAYERS.map(p => `<tr>
+                    <td>${esc(p.pid)}</td><td><b>${esc(p.uname)}</b></td><td>${esc(p.jdate)}</td>
                     <td>${actBadge(p.stat === 'active' ? 1 : 0, p.stat)}</td>
-                    <td>${pcount(p.pid)}</td>
+                    <td>${esc(p.pass_count ?? 0)}</td>
                 </tr>`).join('')}</tbody>
             </table>`;
             break;
 
         case 'revenue': {
             title.textContent = 'Revenue Report';
-            const rev = PG
-                .filter(r => r.src === 'purchase' && r.act === 1)
-                .reduce((s, r) => s + (GAMEPASSES.find(g => g.gpid === r.gpid)?.price || 0), 0);
+            const rev = DB_TRANSACTIONS
+                .filter(r => r.src === 'purchase' && Number(r.act) === 1)
+                .reduce((s, r) => s + (Number(DB_GAMEPASSES.find(g => g.gname === r.gname)?.price) || 0), 0);
             body.innerHTML = `
                 <div style="padding:16px 16px 0;">
                     <div class="alert alert-ok">
@@ -405,11 +440,11 @@ function genReport() {
                 </div>
                 <table>
                     <thead><tr><th>GPID</th><th>Name</th><th>Price (R$)</th><th>Benefit</th><th>For Sale</th></tr></thead>
-                    <tbody>${GAMEPASSES.map(g => `<tr>
-                        <td>${g.gpid}</td><td><b>${g.gname}</b></td>
-                        <td style="font-weight:800;color:var(--yellow);">${g.price ? 'R$ ' + g.price : 'Free'}</td>
-                        <td>${g.benefit}</td>
-                        <td><span class="badge ${g.sale ? 'b-on' : 'b-off'}">${g.sale ? 'On Sale' : 'Off Sale'}</span></td>
+                    <tbody>${DB_GAMEPASSES.map(g => `<tr>
+                        <td>${esc(g.gpid)}</td><td><b>${esc(g.gname)}</b></td>
+                        <td style="font-weight:800;color:var(--yellow);">${Number(g.price) ? 'R$ ' + g.price : 'Free'}</td>
+                        <td>${esc(g.benefit)}</td>
+                        <td><span class="badge ${Number(g.sale) ? 'b-on' : 'b-off'}">${Number(g.sale) ? 'On Sale' : 'Off Sale'}</span></td>
                     </tr>`).join('')}</tbody>
                 </table>`;
             break;
@@ -419,11 +454,11 @@ function genReport() {
             title.textContent = 'Pass Ownership Report';
             body.innerHTML = `<table>
                 <thead><tr><th>Player</th><th>Game Pass</th><th>Source</th><th>Status</th></tr></thead>
-                <tbody>${PG.map(r => `<tr>
-                    <td><b>${pname(r.pid)}</b></td>
-                    <td><span class="ptag"><i class="fa-solid fa-ticket"></i>${gpname(r.gpid)}</span></td>
+                <tbody>${DB_TRANSACTIONS.map(r => `<tr>
+                    <td><b>${esc(r.uname)}</b></td>
+                    <td><span class="ptag"><i class="fa-solid fa-ticket"></i>${esc(r.gname)}</span></td>
                     <td>${srcBadge(r.src)}</td>
-                    <td>${actBadge(r.act)}</td>
+                    <td>${actBadge(Number(r.act))}</td>
                 </tr>`).join('')}</tbody>
             </table>`;
             break;
@@ -435,15 +470,15 @@ function genReport() {
                     <th>ID</th><th>Action</th><th>Player</th><th>Pass</th>
                     <th>Old Src</th><th>New Src</th><th>Old Act</th><th>New Act</th><th>Timestamp</th>
                 </tr></thead>
-                <tbody>${AUDIT.map(a => `<tr>
-                    <td>${a.id}</td>
+                <tbody>${DB_AUDIT.map(a => `<tr>
+                    <td>${esc(a.id)}</td>
                     <td>${actionBadge(a.action)}</td>
-                    <td><b>${pname(a.pid)}</b></td>
-                    <td>${gpname(a.gpid)}</td>
-                    <td>${a.o_src ?? '&mdash;'}</td><td>${a.n_src ?? '&mdash;'}</td>
-                    <td>${a.o_act != null ? a.o_act : '&mdash;'}</td>
-                    <td>${a.n_act != null ? a.n_act : '&mdash;'}</td>
-                    <td style="font-size:.76rem;">${a.ts}</td>
+                    <td><b>${esc(a.uname)}</b></td>
+                    <td>${esc(a.gname)}</td>
+                    <td>${a.old_src ?? '&mdash;'}</td><td>${a.new_src ?? '&mdash;'}</td>
+                    <td>${a.old_act != null ? a.old_act : '&mdash;'}</td>
+                    <td>${a.new_act != null ? a.new_act : '&mdash;'}</td>
+                    <td style="font-size:.76rem;">${esc(a.ts)}</td>
                 </tr>`).join('')}</tbody>
             </table>`;
             break;
@@ -512,6 +547,32 @@ const API_URL = 'api.php';
 let ACCOUNT_ROWS = [];
 let CURRENT_USER = null;
 
+function roleLabel(role) {
+    if (role === 'admin')  return 'Super Administrator';
+    return 'User';
+}
+
+function roleBadge(role) {
+    const map = {
+        admin: ['b-delete',  'fa-shield-halved', 'Admin'],
+        user:  ['b-unknown', 'fa-user',          'User'],
+    };
+    const [cls, icon, label] = map[role] || map.user;
+    return `<span class="badge ${cls}"><i class="fa-solid ${icon}" style="margin-right:4px;font-size:.7rem;"></i>${label}</span>`;
+}
+
+function showLoggedInUser(user) {
+    CURRENT_USER = user || null;
+    if (!CURRENT_USER?.username) return;
+
+    document.getElementById('sb-uname').textContent = CURRENT_USER.username;
+    document.getElementById('sb-av').textContent = CURRENT_USER.username[0].toUpperCase();
+    document.querySelector('.sb-urole').textContent = roleLabel(CURRENT_USER.role);
+    applyRoleUI(CURRENT_USER.role);
+    go('s-app');
+    renderAll();
+}
+
 const esc = value => String(value ?? '')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -519,7 +580,24 @@ const esc = value => String(value ?? '')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 
+const jsString = value => String(value ?? '')
+    .replaceAll('\\', '\\\\')
+    .replaceAll("'", "\\'")
+    .replaceAll('\r', '\\r')
+    .replaceAll('\n', '\\n')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+
 async function apiPost(action, data = {}) {
+    if (window.location.protocol === 'file:') {
+        return {
+            ok: false,
+            message: 'Please open this app through a PHP server, for example http://127.0.0.1:8000/lumbis-activity-4.html. Opening the HTML file directly cannot save accounts to MySQL.',
+        };
+    }
+
     const body = new URLSearchParams({ action });
     Object.entries(data).forEach(([key, value]) => body.append(key, value ?? ''));
 
@@ -530,7 +608,15 @@ async function apiPost(action, data = {}) {
         body
     });
 
-    return response.json();
+    const text = await response.text();
+    try {
+        return JSON.parse(text);
+    } catch (error) {
+        return {
+            ok: false,
+            message: text.trim() || 'api.php did not return valid JSON. Please open this through XAMPP/Apache, not directly as an HTML file.',
+        };
+    }
 }
 
 async function doLogin() {
@@ -557,13 +643,7 @@ async function doLogin() {
         }
 
         err.style.display = 'none';
-        CURRENT_USER = res.user || null;
-        document.getElementById('sb-uname').textContent = res.user.username;
-        document.getElementById('sb-av').textContent = res.user.username[0].toUpperCase();
-        document.querySelector('.sb-urole').textContent =
-            res.user.role === 'admin' ? 'Super Administrator' : 'Staff User';
-        go('s-app');
-        renderAll();
+        showLoggedInUser(res.user);
         toast('ok', `Welcome back, ${res.user.username}!`);
     } catch (error) {
         err.querySelector('span').textContent = 'Unable to connect to api.php.';
@@ -590,7 +670,7 @@ async function doSignup() {
     const uname   = document.getElementById('su-user').value.trim();
     const pass    = document.getElementById('su-pass').value;
     const confirm = document.getElementById('su-confirm').value;
-    const gender  = document.querySelector('.gender-btn.picked span')?.textContent.toLowerCase() || '';
+    const gender  = document.querySelector('#s-signup .gender-btn.picked')?.dataset.value || '';
     const btn     = document.getElementById('su-btn');
 
     if (!month || !day || !year) { toast('err', 'Please enter your birthday.'); return; }
@@ -620,7 +700,6 @@ async function doSignup() {
         }
 
         toast('ok', res.message);
-        document.getElementById('l-user').value = uname;
         document.getElementById('su-month').value = '';
         document.getElementById('su-day').value = '';
         document.getElementById('su-year').value = '';
@@ -630,7 +709,12 @@ async function doSignup() {
         document.getElementById('su-str-bar').style.width = '0';
         document.getElementById('su-str-label').textContent = 'Strength: \u2014';
         document.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('picked'));
-        go('s-login');
+        if (res.user?.username) {
+            showLoggedInUser(res.user);
+        } else {
+            document.getElementById('l-user').value = uname;
+            go('s-login');
+        }
     } catch (error) {
         toast('err', 'Unable to connect to api.php.');
     } finally {
@@ -675,14 +759,38 @@ async function recLookup() {
     }
 }
 
-function renderAll() {
+function applyRoleUI(role) {
+    const isAdmin = role === 'admin';
+
+    /* Sidebar items: admin sees all, users see only Dashboard + Game Passes */
+    const hiddenForUser = ['p-accounts', 'p-players', 'p-audit', 'p-reports', 'p-about'];
+    hiddenForUser.forEach(pid => {
+        const nav = document.querySelector(`.sb-item[onclick*="${pid}"]`);
+        if (nav) nav.style.display = isAdmin ? '' : 'none';
+    });
+
+    /* Admin-only action buttons (Add Player, ban/unban, etc.) */
+    document.querySelectorAll('.admin-action').forEach(el => {
+        el.style.display = isAdmin ? '' : 'none';
+    });
+
+    /* If non-admin is on a restricted page, redirect to dashboard */
+    const restricted = hiddenForUser;
+    const activePage = document.querySelector('.page.active');
+    if (!isAdmin && activePage && restricted.some(pid => activePage.id === pid)) {
+        const dashNav = document.querySelector('.sb-item[onclick*="p-dash"]');
+        if (dashNav) showPage('p-dash', dashNav);
+    }
+}
+
+async function renderAll() {
     updateDate();
-    renderTx();
-    renderPriceBars();
-    renderPlayers(PLAYERS);
-    renderGP(GAMEPASSES);
-    renderAudit();
-    loadAccounts();
+    await loadGamepasses();
+    const tasks = [loadStats(), loadTransactions()];
+    if (canManageAccounts()) {
+        tasks.push(loadPlayers(), loadAudit(), loadAccounts());
+    }
+    await Promise.all(tasks);
 }
 
 function canManageAccounts() {
@@ -690,6 +798,8 @@ function canManageAccounts() {
 }
 
 async function loadAccounts(search = '') {
+    if (!canManageAccounts()) return;
+
     const res = await apiPost('accounts', { search });
     if (!res.ok) {
         toast('err', res.message);
@@ -715,31 +825,32 @@ function renderAccounts(data) {
     tb.innerHTML = data.map(a => {
         const nextStatus = a.status === 'active' ? 'inactive' : 'active';
         const isSelf = Number(a.uid) === Number(CURRENT_USER?.uid);
+        const isMainAdmin = a.username === 'admin';
         const manageButtons = isAdmin
             ? `
                 <button class="btn btn-ghost" onclick="openEditAccount(${Number(a.uid)})" style="padding:5px 11px;font-size:.75rem;">
                     <i class="fa-solid fa-pen"></i> Edit
                 </button>
-                <button class="btn btn-ghost" onclick="setAccountStatus(${Number(a.uid)}, '${nextStatus}')" style="padding:5px 11px;font-size:.75rem;" ${isSelf && nextStatus === 'inactive' ? 'disabled' : ''}>
+                <button class="btn btn-ghost" onclick="setAccountStatus(${Number(a.uid)}, '${nextStatus}')" style="padding:5px 11px;font-size:.75rem;" ${(isSelf || isMainAdmin) && nextStatus === 'inactive' ? 'disabled' : ''}>
                     <i class="fa-solid fa-${nextStatus === 'active' ? 'user-check' : 'user-slash'}"></i>
                     ${nextStatus === 'active' ? 'Set Active' : 'Set Inactive'}
                 </button>
-                <button class="btn btn-ghost" onclick="deleteAccount(${Number(a.uid)}, '${esc(a.username)}')" style="padding:5px 11px;font-size:.75rem;" ${isSelf ? 'disabled' : ''}>
+                <button class="btn btn-ghost" onclick="deleteAccount(${Number(a.uid)}, '${jsString(a.username)}')" style="padding:5px 11px;font-size:.75rem;color:var(--red);" ${isSelf || isMainAdmin ? 'disabled' : ''}>
                     <i class="fa-solid fa-trash"></i> Delete
                 </button>
             `
-            : '<span style="color:var(--text-3);font-size:.76rem;">View only</span>';
+            : `<span style="color:var(--text-3);font-size:.76rem;"><i class="fa-solid fa-eye"></i> View only</span>`;
         return `<tr>
             <td style="color:var(--text-3);font-size:.78rem;">${esc(a.uid)}</td>
-            <td><b>${esc(a.username)}</b></td>
+            <td><b>${esc(a.username)}</b>${isSelf ? ' <span class="badge b-on" style="font-size:.65rem;padding:1px 6px;">You</span>' : ''}</td>
             <td>
-                <b>${esc(a.full_name || 'No name')}</b><br>
-                <span style="color:var(--text-3);font-size:.76rem;">${esc(a.email || 'No email')}</span>
+                <b>${esc(a.full_name || '—')}</b><br>
+                <span style="color:var(--text-3);font-size:.76rem;">${esc(a.email || '—')}</span>
             </td>
-            <td><span class="ptag">${esc(a.role)}</span></td>
+            <td>${roleBadge(a.role)}</td>
             <td>${actBadge(a.status === 'active' ? 1 : 0, a.status)}</td>
-            <td style="color:var(--text-3);font-size:.76rem;">${esc(a.created_at)}</td>
-            <td>${manageButtons}</td>
+            <td style="color:var(--text-3);font-size:.76rem;">${esc(a.created_at?.slice(0,10) ?? '—')}</td>
+            <td style="display:flex;gap:4px;flex-wrap:wrap;">${manageButtons}</td>
         </tr>`;
     }).join('');
 }
@@ -755,9 +866,9 @@ async function addAccount() {
         full_name: document.getElementById('aa-name').value.trim(),
         email: document.getElementById('aa-email').value.trim(),
         birthday: document.getElementById('aa-birthday').value,
-        gender: document.getElementById('aa-gender').value,
-        role: document.getElementById('aa-role').value,
-        status: document.getElementById('aa-status').value,
+        gender: document.querySelector('#m-addaccount .gender-btn.picked')?.dataset.value || '',
+        role: 'user',
+        status: 'active',
         password: document.getElementById('aa-pass').value,
         confirm_password: document.getElementById('aa-confirm').value
     };
@@ -767,9 +878,7 @@ async function addAccount() {
 
     toast('ok', res.message);
     ['aa-user','aa-name','aa-email','aa-birthday','aa-pass','aa-confirm'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('aa-gender').value = '';
-    document.getElementById('aa-role').value = 'user';
-    document.getElementById('aa-status').value = 'active';
+    document.querySelectorAll('#m-addaccount .gender-btn').forEach(b => b.classList.remove('picked'));
     closeModal('m-addaccount');
     loadAccounts(document.getElementById('acc-search').value.trim());
 }
@@ -789,6 +898,18 @@ function openEditAccount(uid) {
     document.getElementById('ea-status').value = account.status || 'active';
     document.getElementById('ea-pass').value = '';
     document.getElementById('ea-confirm').value = '';
+
+    const isMainAdmin = account.username === 'admin';
+    const roleSelect = document.getElementById('ea-role');
+    const adminOption = roleSelect.querySelector('option[value="admin"]');
+    if (adminOption) {
+        adminOption.hidden = !isMainAdmin;
+        adminOption.disabled = !isMainAdmin;
+    }
+    document.getElementById('ea-user').disabled = isMainAdmin;
+    roleSelect.disabled = isMainAdmin;
+    document.getElementById('ea-status').disabled = isMainAdmin;
+
     openModal('m-editaccount');
 }
 
@@ -838,14 +959,8 @@ async function deleteAccount(uid, username) {
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         const res = await apiPost('session');
-        if (res.ok && res.logged_in && res.user.username) {
-            CURRENT_USER = res.user || null;
-            document.getElementById('sb-uname').textContent = res.user.username;
-            document.getElementById('sb-av').textContent = res.user.username[0].toUpperCase();
-            document.querySelector('.sb-urole').textContent =
-                res.user.role === 'admin' ? 'Super Administrator' : 'Staff User';
-            go('s-app');
-            renderAll();
+        if (res.ok && res.logged_in && res.user?.username) {
+            showLoggedInUser(res.user);
         }
     } catch (error) {
         /* The login screen will show the API error when the user tries to log in. */

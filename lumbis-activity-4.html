@@ -99,10 +99,10 @@
             <div class="form-group">
                 <label>Gender <span style="color:var(--text-3);font-weight:400;">(optional)</span></label>
                 <div class="gender-row">
-                    <button type="button" class="gender-btn" onclick="pickGender(this)">
+                    <button type="button" class="gender-btn" data-value="male" onclick="pickGender(this)">
                         <i class="fa-solid fa-mars"></i><span>Male</span>
                     </button>
-                    <button type="button" class="gender-btn" onclick="pickGender(this)">
+                    <button type="button" class="gender-btn" data-value="female" onclick="pickGender(this)">
                         <i class="fa-solid fa-venus"></i><span>Female</span>
                     </button>
                 </div>
@@ -215,7 +215,7 @@
             <div class="sb-avatar" id="sb-av">A</div>
             <div class="sb-uinfo">
                 <div class="sb-uname" id="sb-uname">Admin</div>
-                <div class="sb-urole">Super Administrator</div>
+                <div class="sb-urole">User</div>
             </div>
             <button class="sb-logout" onclick="doLogout()" title="Log out">
                 <i class="fa-solid fa-right-from-bracket"></i>
@@ -336,7 +336,7 @@
                             <i class="fa-solid fa-magnifying-glass"></i>
                             <input type="text" id="acc-search" placeholder="Search accounts…" oninput="filterAccounts()">
                         </div>
-                        <button class="btn btn-red" id="acc-add-btn" onclick="openModal('m-addaccount')" style="padding:8px 14px;font-size:.78rem;">
+                        <button class="btn btn-red admin-action" id="acc-add-btn" onclick="openModal('m-addaccount')" style="padding:8px 14px;font-size:.78rem;">
                             <i class="fa-solid fa-plus"></i> Add Account
                         </button>
                     </div>
@@ -367,7 +367,7 @@
                             <i class="fa-solid fa-magnifying-glass"></i>
                             <input type="text" id="pl-search" placeholder="Search players…" oninput="filterPlayers()">
                         </div>
-                        <button class="btn btn-red" onclick="openModal('m-addplayer')" style="padding:8px 14px;font-size:.78rem;">
+                        <button class="btn btn-red admin-action" id="pl-add-btn" onclick="openModal('m-addplayer')" style="padding:8px 14px;font-size:.78rem;">
                             <i class="fa-solid fa-plus"></i> Add Player
                         </button>
                     </div>
@@ -596,62 +596,66 @@
 <!-- ================================================================
      MODAL: ADD ACCOUNT
 ================================================================ -->
-<div class="modal-bg" id="m-addaccount">
+<div class="modal-bg account-auth-modal" id="m-addaccount">
     <div class="modal">
         <div class="modal-head">
-            <h3><i class="fa-solid fa-user-plus" style="color:var(--blue);"></i> Add Account</h3>
+            <h3><i class="fa-solid fa-user-plus" style="color:var(--red);"></i> Create User Account</h3>
             <button class="modal-close" onclick="closeModal('m-addaccount')"><i class="fa-solid fa-xmark"></i></button>
         </div>
-        <div class="form-group">
-            <label>Username</label>
-            <input type="text" id="aa-user" placeholder="e.g. admin2">
-        </div>
-        <div class="form-group">
-            <label>Full Name</label>
-            <input type="text" id="aa-name" placeholder="Account owner">
-        </div>
-        <div class="form-group">
-            <label>Email</label>
-            <input type="email" id="aa-email" placeholder="name@example.com">
+        <div class="account-modal-brand">
+            <div class="logo-text">RBX<span>GPM</span></div>
+            <div class="logo-sub">Create Your Account</div>
         </div>
         <div class="form-group">
             <label>Birthday</label>
             <input type="date" id="aa-birthday">
         </div>
         <div class="form-group">
-            <label>Gender</label>
-            <select id="aa-gender">
-                <option value="">Prefer not to say</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-            </select>
+            <label>Username</label>
+            <input type="text" id="aa-user" placeholder="Don&apos;t use a real name" autocomplete="off" maxlength="50">
         </div>
-        <div class="form-group">
-            <label>Role</label>
-            <select id="aa-role">
-                <option value="user">User</option>
-                <option value="staff">Staff</option>
-                <option value="admin">Admin</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Status</label>
-            <select id="aa-status">
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-            </select>
+        <div class="account-profile-grid">
+            <div class="form-group">
+                <label>Full Name <span style="color:var(--text-3);font-weight:400;">(optional)</span></label>
+                <input type="text" id="aa-name" placeholder="Account owner">
+            </div>
+            <div class="form-group">
+                <label>Email <span style="color:var(--text-3);font-weight:400;">(optional)</span></label>
+                <input type="email" id="aa-email" placeholder="name@example.com">
+            </div>
         </div>
         <div class="form-group">
             <label>Password</label>
-            <input type="password" id="aa-pass" placeholder="At least 8 characters">
+            <div class="field-wrap">
+                <input type="password" id="aa-pass" placeholder="At least 8 characters">
+                <i class="fa-solid fa-eye eye" onclick="toggleEye('aa-pass',this)"></i>
+            </div>
         </div>
         <div class="form-group">
             <label>Confirm Password</label>
-            <input type="password" id="aa-confirm" placeholder="Repeat password">
+            <div class="field-wrap">
+                <input type="password" id="aa-confirm" placeholder="Repeat password">
+                <i class="fa-solid fa-eye eye" onclick="toggleEye('aa-confirm',this)"></i>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Gender <span style="color:var(--text-3);font-weight:400;">(optional)</span></label>
+            <div class="gender-row">
+                <button type="button" class="gender-btn" data-value="male" onclick="pickGender(this)">
+                    <i class="fa-solid fa-mars"></i><span>Male</span>
+                </button>
+                <button type="button" class="gender-btn" data-value="female" onclick="pickGender(this)">
+                    <i class="fa-solid fa-venus"></i><span>Female</span>
+                </button>
+            </div>
+        </div>
+        <div class="account-defaults">
+            <span><i class="fa-solid fa-user"></i> Role: User</span>
+            <span><i class="fa-solid fa-circle-check"></i> Status: Active</span>
         </div>
         <div class="modal-foot">
             <button class="btn btn-ghost" onclick="closeModal('m-addaccount')">Cancel</button>
-            <button class="btn btn-blue" onclick="addAccount()">Add Account</button>
+            <button class="btn btn-red" onclick="addAccount()"><i class="fa-solid fa-user-plus"></i> Create Account</button>
         </div>
     </div>
 </div>
@@ -694,7 +698,6 @@
             <label>Role</label>
             <select id="ea-role">
                 <option value="user">User</option>
-                <option value="staff">Staff</option>
                 <option value="admin">Admin</option>
             </select>
         </div>

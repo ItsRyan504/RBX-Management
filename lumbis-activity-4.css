@@ -811,6 +811,101 @@ tbody tr:hover td { background:rgba(255,255,255,.018); }
 }
 .modal-foot .btn { padding:9px 20px; }
 
+.account-auth-modal .modal {
+    max-width:420px;
+    max-height:calc(100vh - 24px);
+    overflow-y:auto;
+    background:rgba(17,17,17,.96);
+    padding:18px 24px 20px;
+    box-shadow:0 32px 64px rgba(0,0,0,.7);
+    backdrop-filter:blur(24px);
+}
+.account-auth-modal .modal-head {
+    margin-bottom:8px;
+}
+.account-auth-modal .modal-head h3 { font-size:.92rem; }
+.account-modal-brand {
+    text-align:left;
+    margin-bottom:12px;
+}
+.account-modal-brand .logo-text {
+    font-size:1.05rem;
+    font-weight:900;
+    line-height:1;
+}
+.account-modal-brand .logo-text span { color:var(--red); }
+.account-modal-brand .logo-sub {
+    font-size:.72rem;
+    letter-spacing:0;
+    text-transform:uppercase;
+    color:var(--text-2);
+    margin-top:3px;
+}
+.account-auth-modal .form-group { margin-bottom:10px; }
+.account-auth-modal .form-group label { margin-bottom:5px; font-size:.75rem; }
+.account-auth-modal .form-group input,
+.account-auth-modal .form-group select {
+    padding:9px 12px;
+    font-size:.82rem;
+}
+.account-profile-grid {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+}
+.account-auth-modal .gender-row {
+    gap:8px;
+}
+.account-auth-modal .gender-btn {
+    padding:10px 8px;
+    gap:4px;
+}
+.account-auth-modal .gender-btn i {
+    font-size:1.05rem;
+}
+.account-auth-modal .gender-btn span {
+    font-size:.68rem;
+}
+.account-defaults {
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+    margin-top:2px;
+}
+.account-defaults span {
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    background:var(--bg-input);
+    color:var(--text-2);
+    font-size:.7rem;
+    font-weight:700;
+    padding:6px 8px;
+}
+.account-defaults i { color:var(--blue); }
+.account-auth-modal .modal-foot {
+    position:sticky;
+    bottom:-1px;
+    background:linear-gradient(180deg, rgba(17,17,17,.15), rgba(17,17,17,.98) 26%);
+    margin:12px -24px -20px;
+    padding:14px 24px 18px;
+}
+.account-auth-modal .modal-foot .btn {
+    padding:8px 14px;
+    font-size:.8rem;
+}
+
+@media (max-width:560px) {
+    .account-auth-modal .modal { padding:16px; }
+    .account-profile-grid { grid-template-columns:1fr; gap:0; }
+    .account-auth-modal .modal-foot {
+        margin:12px -16px -16px;
+        padding:12px 16px 16px;
+    }
+}
+
 /* ===== TOAST ===== */
 #toast-box {
     position:fixed; bottom:22px; right:22px;
