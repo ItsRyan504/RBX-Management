@@ -543,7 +543,13 @@ function toast(type, msg) {
 /* ========================================================
    PHP + MYSQL BACKEND
 ======================================================== */
-const API_URL = 'api.php';
+const API_URL = (() => {
+    /* Live Server (e.g., :5500) does not execute PHP; route API calls to Apache/XAMPP path. */
+    if (/^55\d{2}$/.test(window.location.port)) {
+        return `${window.location.protocol}//127.0.0.1/EDP/api.php`;
+    }
+    return new URL('api.php', window.location.href).href;
+})();
 let ACCOUNT_ROWS = [];
 let CURRENT_USER = null;
 
@@ -571,6 +577,10 @@ function showLoggedInUser(user) {
     applyRoleUI(CURRENT_USER.role);
     go('s-app');
     renderAll();
+
+    if (CURRENT_USER.role !== 'admin') {
+        toast('info', 'You are logged in as User. Account/Player creation in the dashboard requires admin login.');
+    }
 }
 
 const esc = value => String(value ?? '')
@@ -601,12 +611,20 @@ async function apiPost(action, data = {}) {
     const body = new URLSearchParams({ action });
     Object.entries(data).forEach(([key, value]) => body.append(key, value ?? ''));
 
-    const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        credentials: 'same-origin',
-        body
-    });
+    let response;
+    try {
+        response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            credentials: 'include',
+            body
+        });
+    } catch (error) {
+        return {
+            ok: false,
+            message: `Cannot reach API (${API_URL}). Run this through Apache/XAMPP and make sure api.php is accessible.`,
+        };
+    }
 
     const text = await response.text();
     try {
@@ -614,7 +632,7 @@ async function apiPost(action, data = {}) {
     } catch (error) {
         return {
             ok: false,
-            message: text.trim() || 'api.php did not return valid JSON. Please open this through XAMPP/Apache, not directly as an HTML file.',
+            message: text.trim() || `api.php did not return valid JSON from ${API_URL}. Please open this through XAMPP/Apache.`,
         };
     }
 }
@@ -861,26 +879,43 @@ function filterAccounts() {
 
 async function addAccount() {
     if (!canManageAccounts()) { toast('err', 'Only admin can add accounts.'); return; }
+
+    const username = document.getElementById('aa-user').value.trim();
+    const pass = document.getElementById('aa-pass').value;
+    const confirm = document.getElementById('aa-confirm').value;
+
+    if (!username) { toast('err', 'Username is required.'); return; }
+    if (!/^[a-zA-Z0-9_]{3,50}$/.test(username)) {
+        toast('err', 'Username must be 3-50 characters (letters, numbers, underscores only).');
+        return;
+    }
+    if (pass.length < 8) { toast('err', 'Password must be at least 8 characters.'); return; }
+    if (pass !== confirm) { toast('err', 'Passwords do not match.'); return; }
+
     const data = {
-        username: document.getElementById('aa-user').value.trim(),
+        username,
         full_name: document.getElementById('aa-name').value.trim(),
         email: document.getElementById('aa-email').value.trim(),
         birthday: document.getElementById('aa-birthday').value,
         gender: document.querySelector('#m-addaccount .gender-btn.picked')?.dataset.value || '',
         role: 'user',
         status: 'active',
-        password: document.getElementById('aa-pass').value,
-        confirm_password: document.getElementById('aa-confirm').value
+        password: pass,
+        confirm_password: confirm
     };
 
-    const res = await apiPost('add_account', data);
-    if (!res.ok) { toast('err', res.message); return; }
+    try {
+        const res = await apiPost('add_account', data);
+        if (!res.ok) { toast('err', res.message); return; }
 
-    toast('ok', res.message);
-    ['aa-user','aa-name','aa-email','aa-birthday','aa-pass','aa-confirm'].forEach(id => document.getElementById(id).value = '');
-    document.querySelectorAll('#m-addaccount .gender-btn').forEach(b => b.classList.remove('picked'));
-    closeModal('m-addaccount');
-    loadAccounts(document.getElementById('acc-search').value.trim());
+        toast('ok', res.message);
+        ['aa-user','aa-name','aa-email','aa-birthday','aa-pass','aa-confirm'].forEach(id => document.getElementById(id).value = '');
+        document.querySelectorAll('#m-addaccount .gender-btn').forEach(b => b.classList.remove('picked'));
+        closeModal('m-addaccount');
+        loadAccounts(document.getElementById('acc-search').value.trim());
+    } catch (error) {
+        toast('err', 'Unable to connect to api.php.');
+    }
 }
 
 function openEditAccount(uid) {

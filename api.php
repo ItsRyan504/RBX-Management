@@ -145,6 +145,11 @@ function ensure_accounts_table(mysqli $conn): void
         }
     }
 
+    /* Fix legacy rows where optional fields were stored as '' (breaks UNIQUE email, mysqli NULL binds). */
+    $conn->query("UPDATE accounts SET email = NULL WHERE email = ''");
+    $conn->query("UPDATE accounts SET full_name = NULL WHERE full_name = ''");
+    $conn->query("UPDATE accounts SET gender = NULL WHERE gender = ''");
+
     /* Keep exactly one admin role in the activity: admin / admin123. */
     $stmt = $conn->prepare('SELECT uid, password_hash FROM accounts WHERE username = ? LIMIT 1');
     $adminUsername = ADMIN_USERNAME;
@@ -252,16 +257,17 @@ function create_account(mysqli $conn, array $data): array
 {
     $username     = $data['username'];
     $passwordHash = password_hash($data['password'], PASSWORD_DEFAULT);
-    $fullName     = null_or_string($data['full_name']);
-    $email        = null_or_string($data['email']);
-    $birthday     = null_or_string($data['birthday']);
-    $gender       = null_or_string($data['gender']);
-    $role         = $data['role'];
-    $status       = $data['status'];
+    /* Bind optional columns as empty string + NULLIF so SQL stores real NULL (avoids duplicate '' on UNIQUE email). */
+    $fullName = null_or_string($data['full_name']) ?? '';
+    $email    = null_or_string($data['email']) ?? '';
+    $birthday = null_or_string($data['birthday']) ?? '';
+    $gender   = null_or_string($data['gender']) ?? '';
+    $role     = $data['role'];
+    $status   = $data['status'];
 
     $stmt = $conn->prepare(
         'INSERT INTO accounts (username, password_hash, full_name, email, birthday, gender, role, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+         VALUES (?, ?, NULLIF(?, \'\'), NULLIF(?, \'\'), NULLIF(?, \'\'), NULLIF(?, \'\'), ?, ?)'
     );
     $stmt->bind_param('ssssssss', $username, $passwordHash, $fullName, $email, $birthday, $gender, $role, $status);
     $stmt->execute();
@@ -458,10 +464,10 @@ try {
         }
 
         $username = $data['username'];
-        $fullName = null_or_string($data['full_name']);
-        $email    = null_or_string($data['email']);
-        $birthday = null_or_string($data['birthday']);
-        $gender   = null_or_string($data['gender']);
+        $fullName = null_or_string($data['full_name']) ?? '';
+        $email    = null_or_string($data['email']) ?? '';
+        $birthday = null_or_string($data['birthday']) ?? '';
+        $gender   = null_or_string($data['gender']) ?? '';
         $role     = $data['role'];
         $status   = $data['status'];
 
@@ -469,14 +475,16 @@ try {
             $passwordHash = password_hash($data['password'], PASSWORD_DEFAULT);
             $stmt = $conn->prepare(
                 'UPDATE accounts
-                 SET username = ?, password_hash = ?, full_name = ?, email = ?, birthday = ?, gender = ?, role = ?, status = ?
+                 SET username = ?, password_hash = ?, full_name = NULLIF(?, \'\'), email = NULLIF(?, \'\'),
+                     birthday = NULLIF(?, \'\'), gender = NULLIF(?, \'\'), role = ?, status = ?
                  WHERE uid = ?'
             );
             $stmt->bind_param('ssssssssi', $username, $passwordHash, $fullName, $email, $birthday, $gender, $role, $status, $uid);
         } else {
             $stmt = $conn->prepare(
                 'UPDATE accounts
-                 SET username = ?, full_name = ?, email = ?, birthday = ?, gender = ?, role = ?, status = ?
+                 SET username = ?, full_name = NULLIF(?, \'\'), email = NULLIF(?, \'\'),
+                     birthday = NULLIF(?, \'\'), gender = NULLIF(?, \'\'), role = ?, status = ?
                  WHERE uid = ?'
             );
             $stmt->bind_param('sssssssi', $username, $fullName, $email, $birthday, $gender, $role, $status, $uid);
