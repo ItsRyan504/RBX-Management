@@ -78,11 +78,15 @@ function public_account(array $account): array
 {
     $username = (string) ($account['username'] ?? '');
     $role     = (string) ($account['role'] ?? 'user');
+    $fullName = isset($account['full_name']) && $account['full_name'] !== null
+        ? (string) $account['full_name']
+        : '';
 
     return [
-        'uid'      => (int) $account['uid'],
-        'username' => $username,
-        'role'     => $role,
+        'uid'       => (int) $account['uid'],
+        'username'  => $username,
+        'role'      => $role,
+        'full_name' => $fullName,
     ];
 }
 
@@ -208,6 +212,114 @@ function ensure_system_audit_table(mysqli $conn): void
             PRIMARY KEY (id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
     );
+}
+
+function ensure_refund_requests_table(mysqli $conn): void
+{
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS refund_requests (
+            id int(11) NOT NULL AUTO_INCREMENT,
+            pid int(11) NOT NULL,
+            gpid int(11) NOT NULL,
+            pname varchar(50) NOT NULL,
+            gname varchar(80) NOT NULL,
+            status varchar(20) NOT NULL DEFAULT 'pending',
+            created_at timestamp NOT NULL DEFAULT current_timestamp(),
+            resolved_at timestamp NULL DEFAULT NULL,
+            resolved_by varchar(50) DEFAULT NULL,
+            PRIMARY KEY (id),
+            KEY pid (pid),
+            KEY gpid (gpid),
+            KEY status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+    );
+}
+
+function ensure_transactions_table(mysqli $conn): void
+{
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS transactions (
+            tid int(11) NOT NULL AUTO_INCREMENT,
+            ttype varchar(20) NOT NULL,
+            actor_uid int(11) NOT NULL,
+            actor_username varchar(50) NOT NULL,
+            actor_role varchar(20) NOT NULL DEFAULT 'user',
+            pid int(11) DEFAULT NULL,
+            pname varchar(50) DEFAULT NULL,
+            gpid int(11) DEFAULT NULL,
+            gname varchar(80) DEFAULT NULL,
+            amount int(11) NOT NULL DEFAULT 0,
+            notes varchar(255) DEFAULT NULL,
+            status varchar(20) NOT NULL DEFAULT 'completed',
+            created_at timestamp NOT NULL DEFAULT current_timestamp(),
+            PRIMARY KEY (tid),
+            KEY ttype (ttype),
+            KEY actor_uid (actor_uid),
+            KEY created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+    );
+}
+
+function record_transaction(
+    mysqli $conn,
+    string $ttype,
+    int $pid,
+    string $pname,
+    int $gpid,
+    string $gname,
+    int $amount,
+    ?string $notes = null,
+    string $status = 'completed'
+): int {
+    $actorUid = (int) ($_SESSION['uid'] ?? 0);
+    $actorUsername = (string) ($_SESSION['username'] ?? 'system');
+    $actorRole = (string) ($_SESSION['role'] ?? 'user');
+
+    $stmt = $conn->prepare(
+        'INSERT INTO transactions
+            (ttype, actor_uid, actor_username, actor_role, pid, pname, gpid, gname, amount, notes, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    /* s i s s  i s i s  i s s */
+    $stmt->bind_param(
+        'sissisisiss',
+        $ttype,
+        $actorUid,
+        $actorUsername,
+        $actorRole,
+        $pid,
+        $pname,
+        $gpid,
+        $gname,
+        $amount,
+        $notes,
+        $status
+    );
+    $stmt->execute();
+    return (int) $conn->insert_id;
+}
+
+function find_or_create_player_for_user(mysqli $conn, string $username): ?array
+{
+    $stmt = $conn->prepare('SELECT pid, uname, stat FROM players WHERE uname = ? LIMIT 1');
+    $stmt->bind_param('s', $username);
+    $stmt->execute();
+    $player = $stmt->get_result()->fetch_assoc();
+    if ($player) {
+        return $player;
+    }
+
+    $joinDate = date('Y-m-d');
+    $active = 'active';
+    $nextPid = (int) $conn->query('SELECT COALESCE(MAX(pid), 0) + 1 FROM players')->fetch_row()[0];
+    $stmt = $conn->prepare('INSERT INTO players (pid, uname, jdate, stat) VALUES (?, ?, ?, ?)');
+    $stmt->bind_param('isss', $nextPid, $username, $joinDate, $active);
+    $stmt->execute();
+
+    $stmt = $conn->prepare('SELECT pid, uname, stat FROM players WHERE uname = ? LIMIT 1');
+    $stmt->bind_param('s', $username);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc() ?: null;
 }
 
 function write_audit(mysqli $conn, string $module, string $action, ?string $target = null, ?string $details = null): void
@@ -364,6 +476,8 @@ try {
     $conn = $mysql->getConnection();
     ensure_accounts_table($conn);
     ensure_system_audit_table($conn);
+    ensure_transactions_table($conn);
+    ensure_refund_requests_table($conn);
 } catch (Throwable $e) {
     respond(false, 'Database error: ' . $e->getMessage());
 }
@@ -377,7 +491,7 @@ try {
 
         if ($loggedIn) {
             $uid = (int) $_SESSION['uid'];
-            $stmt = $conn->prepare('SELECT uid, username, role, status FROM accounts WHERE uid = ? LIMIT 1');
+            $stmt = $conn->prepare('SELECT uid, username, full_name, role, status FROM accounts WHERE uid = ? LIMIT 1');
             $stmt->bind_param('i', $uid);
             $stmt->execute();
             $account = $stmt->get_result()->fetch_assoc();
@@ -866,7 +980,7 @@ try {
             respond(false, 'Invalid game pass selected.');
         }
 
-        $stmt = $conn->prepare('SELECT gpid, gname, sale FROM gamepasses WHERE gpid = ? LIMIT 1');
+        $stmt = $conn->prepare('SELECT gpid, gname, price, sale FROM gamepasses WHERE gpid = ? LIMIT 1');
         $stmt->bind_param('i', $gpid);
         $stmt->execute();
         $gamepass = $stmt->get_result()->fetch_assoc();
@@ -882,24 +996,7 @@ try {
             respond(false, 'Please log in first.');
         }
 
-        $stmt = $conn->prepare('SELECT pid, stat FROM players WHERE uname = ? LIMIT 1');
-        $stmt->bind_param('s', $username);
-        $stmt->execute();
-        $player = $stmt->get_result()->fetch_assoc();
-
-        if (!$player) {
-            $joinDate = date('Y-m-d');
-            $active = 'active';
-            $nextPid = (int) $conn->query('SELECT COALESCE(MAX(pid), 0) + 1 FROM players')->fetch_row()[0];
-            $stmt = $conn->prepare('INSERT INTO players (pid, uname, jdate, stat) VALUES (?, ?, ?, ?)');
-            $stmt->bind_param('isss', $nextPid, $username, $joinDate, $active);
-            $stmt->execute();
-            $stmt = $conn->prepare('SELECT pid, stat FROM players WHERE uname = ? LIMIT 1');
-            $stmt->bind_param('s', $username);
-            $stmt->execute();
-            $player = $stmt->get_result()->fetch_assoc();
-        }
-
+        $player = find_or_create_player_for_user($conn, $username);
         if (!$player) {
             respond(false, 'Unable to create a player profile for this account.');
         }
@@ -932,7 +1029,266 @@ try {
             $stmt->execute();
         }
 
-        respond(true, 'Purchase successful! You now own "' . $gamepass['gname'] . '".');
+        $amount = (int) $gamepass['price'];
+        $tid = record_transaction(
+            $conn,
+            'purchase',
+            $playerId,
+            (string) $player['uname'],
+            $gpid,
+            (string) $gamepass['gname'],
+            $amount,
+            'Self-purchase from catalog.'
+        );
+
+        respond(true, 'Purchase successful! You now own "' . $gamepass['gname'] . '".', [
+            'tid' => $tid,
+        ]);
+    }
+
+    /* ── Three primary transactions ── */
+
+    if ($action === 'tx_purchase') {
+        require_login();
+        $gpid = (int) ($_POST['gpid'] ?? 0);
+        $pid = (int) ($_POST['pid'] ?? 0);
+        $notes = value('notes', null);
+        if ($gpid < 1) {
+            respond(false, 'Please choose a game pass to purchase.');
+        }
+
+        $stmt = $conn->prepare('SELECT gpid, gname, price, sale FROM gamepasses WHERE gpid = ? LIMIT 1');
+        $stmt->bind_param('i', $gpid);
+        $stmt->execute();
+        $gamepass = $stmt->get_result()->fetch_assoc();
+        if (!$gamepass) {
+            respond(false, 'Game pass not found.');
+        }
+        if ((int) $gamepass['sale'] !== 1) {
+            respond(false, 'This game pass is currently off sale.');
+        }
+
+        $role = (string) ($_SESSION['role'] ?? '');
+        $sessionUsername = (string) ($_SESSION['username'] ?? '');
+
+        if (in_array($role, ['admin', 'staff'], true)) {
+            if ($pid < 1) {
+                respond(false, 'Please pick the player making the purchase.');
+            }
+            $stmt = $conn->prepare('SELECT pid, uname, stat FROM players WHERE pid = ? LIMIT 1');
+            $stmt->bind_param('i', $pid);
+            $stmt->execute();
+            $player = $stmt->get_result()->fetch_assoc();
+        } else {
+            $player = find_or_create_player_for_user($conn, $sessionUsername);
+        }
+
+        if (!$player) {
+            respond(false, 'Player profile not found.');
+        }
+        if (($player['stat'] ?? 'active') !== 'active') {
+            respond(false, 'That player is banned and cannot purchase passes.');
+        }
+
+        $playerId = (int) $player['pid'];
+
+        $stmt = $conn->prepare('SELECT act FROM player_gamepasses WHERE pid = ? AND gpid = ? LIMIT 1');
+        $stmt->bind_param('ii', $playerId, $gpid);
+        $stmt->execute();
+        $owned = $stmt->get_result()->fetch_assoc();
+
+        if ($owned && (int) $owned['act'] === 1) {
+            respond(false, $player['uname'] . ' already owns "' . $gamepass['gname'] . '".');
+        }
+
+        $src = 'purchase';
+        $active = 1;
+        if ($owned) {
+            $stmt = $conn->prepare('UPDATE player_gamepasses SET src = ?, act = ? WHERE pid = ? AND gpid = ?');
+            $stmt->bind_param('siii', $src, $active, $playerId, $gpid);
+        } else {
+            $stmt = $conn->prepare('INSERT INTO player_gamepasses (pid, gpid, src, act) VALUES (?, ?, ?, ?)');
+            $stmt->bind_param('iisi', $playerId, $gpid, $src, $active);
+        }
+        $stmt->execute();
+
+        $tid = record_transaction(
+            $conn,
+            'purchase',
+            $playerId,
+            (string) $player['uname'],
+            $gpid,
+            (string) $gamepass['gname'],
+            (int) $gamepass['price'],
+            $notes
+        );
+
+        respond(true, 'Purchase recorded for "' . $gamepass['gname'] . '".', ['tid' => $tid]);
+    }
+
+    if ($action === 'tx_gift') {
+        require_staff_or_admin();
+        $gpid = (int) ($_POST['gpid'] ?? 0);
+        $pid = (int) ($_POST['pid'] ?? 0);
+        $notes = value('notes', null);
+
+        if ($gpid < 1) {
+            respond(false, 'Please choose a game pass to gift.');
+        }
+        if ($pid < 1) {
+            respond(false, 'Please choose the receiving player.');
+        }
+
+        $stmt = $conn->prepare('SELECT gpid, gname, price FROM gamepasses WHERE gpid = ? LIMIT 1');
+        $stmt->bind_param('i', $gpid);
+        $stmt->execute();
+        $gamepass = $stmt->get_result()->fetch_assoc();
+        if (!$gamepass) {
+            respond(false, 'Game pass not found.');
+        }
+
+        $stmt = $conn->prepare('SELECT pid, uname, stat FROM players WHERE pid = ? LIMIT 1');
+        $stmt->bind_param('i', $pid);
+        $stmt->execute();
+        $player = $stmt->get_result()->fetch_assoc();
+        if (!$player) {
+            respond(false, 'Player not found.');
+        }
+        if (($player['stat'] ?? 'active') !== 'active') {
+            respond(false, 'That player is banned and cannot receive gifts.');
+        }
+
+        $stmt = $conn->prepare('SELECT act FROM player_gamepasses WHERE pid = ? AND gpid = ? LIMIT 1');
+        $stmt->bind_param('ii', $pid, $gpid);
+        $stmt->execute();
+        $owned = $stmt->get_result()->fetch_assoc();
+
+        if ($owned && (int) $owned['act'] === 1) {
+            respond(false, $player['uname'] . ' already owns "' . $gamepass['gname'] . '".');
+        }
+
+        $src = 'gift';
+        $active = 1;
+        if ($owned) {
+            $stmt = $conn->prepare('UPDATE player_gamepasses SET src = ?, act = ? WHERE pid = ? AND gpid = ?');
+            $stmt->bind_param('siii', $src, $active, $pid, $gpid);
+        } else {
+            $stmt = $conn->prepare('INSERT INTO player_gamepasses (pid, gpid, src, act) VALUES (?, ?, ?, ?)');
+            $stmt->bind_param('iisi', $pid, $gpid, $src, $active);
+        }
+        $stmt->execute();
+
+        $tid = record_transaction(
+            $conn,
+            'gift',
+            $pid,
+            (string) $player['uname'],
+            $gpid,
+            (string) $gamepass['gname'],
+            0,
+            $notes ?: 'Complimentary gift from ' . ($_SESSION['username'] ?? 'staff') . '.'
+        );
+
+        respond(true, 'Gifted "' . $gamepass['gname'] . '" to ' . $player['uname'] . '.', ['tid' => $tid]);
+    }
+
+    if ($action === 'tx_refund') {
+        require_staff_or_admin();
+        $gpid = (int) ($_POST['gpid'] ?? 0);
+        $pid = (int) ($_POST['pid'] ?? 0);
+        $notes = value('notes', null);
+
+        if ($gpid < 1 || $pid < 1) {
+            respond(false, 'Please pick both the player and the game pass to refund.');
+        }
+
+        $stmt = $conn->prepare(
+            'SELECT pg.act, p.uname, g.gname, g.price
+             FROM player_gamepasses pg
+             JOIN players p ON p.pid = pg.pid
+             JOIN gamepasses g ON g.gpid = pg.gpid
+             WHERE pg.pid = ? AND pg.gpid = ? LIMIT 1'
+        );
+        $stmt->bind_param('ii', $pid, $gpid);
+        $stmt->execute();
+        $owned = $stmt->get_result()->fetch_assoc();
+
+        if (!$owned) {
+            respond(false, 'No ownership record found for that player and pass.');
+        }
+        if ((int) $owned['act'] !== 1) {
+            respond(false, 'This pass is already inactive for that player.');
+        }
+
+        $active = 0;
+        $stmt = $conn->prepare('UPDATE player_gamepasses SET act = ? WHERE pid = ? AND gpid = ?');
+        $stmt->bind_param('iii', $active, $pid, $gpid);
+        $stmt->execute();
+
+        $tid = record_transaction(
+            $conn,
+            'refund',
+            $pid,
+            (string) $owned['uname'],
+            $gpid,
+            (string) $owned['gname'],
+            -1 * (int) $owned['price'],
+            $notes ?: 'Refund issued by ' . ($_SESSION['username'] ?? 'staff') . '.'
+        );
+
+        respond(true, 'Refund completed for "' . $owned['gname'] . '".', ['tid' => $tid]);
+    }
+
+    if ($action === 'tx_list') {
+        require_login();
+        $type = value('ttype', '') ?? '';
+        $from = value('date_from', '') ?? '';
+        $to = value('date_to', '') ?? '';
+
+        $sql = 'SELECT tid, ttype, actor_uid, actor_username, actor_role,
+                       pid, pname, gpid, gname, amount, notes, status, created_at
+                FROM transactions WHERE 1=1';
+        $params = [];
+        $types = '';
+
+        if ($type !== '' && in_array($type, ['purchase', 'gift', 'refund'], true)) {
+            $sql .= ' AND ttype = ?';
+            $params[] = $type;
+            $types .= 's';
+        }
+        if ($from !== '') {
+            $sql .= ' AND DATE(created_at) >= ?';
+            $params[] = $from;
+            $types .= 's';
+        }
+        if ($to !== '') {
+            $sql .= ' AND DATE(created_at) <= ?';
+            $params[] = $to;
+            $types .= 's';
+        }
+
+        /* Non-privileged users see their own purchases (actor_uid) and
+           transactions targeting their player profile (refunds/gifts by staff). */
+        $role = (string) ($_SESSION['role'] ?? '');
+        if (!in_array($role, ['admin', 'staff'], true)) {
+            $uid      = (int) ($_SESSION['uid'] ?? 0);
+            $username = (string) ($_SESSION['username'] ?? '');
+            $sql .= ' AND (actor_uid = ? OR pid = (SELECT pid FROM players WHERE uname = ? LIMIT 1))';
+            $params[] = $uid;
+            $params[] = $username;
+            $types .= 'is';
+        }
+
+        $sql .= ' ORDER BY created_at DESC, tid DESC';
+
+        $stmt = $conn->prepare($sql);
+        if ($types !== '') {
+            $stmt->bind_param($types, ...$params);
+        }
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        respond(true, '', ['transactions' => $rows]);
     }
 
     if ($action === 'gamepasses') {
@@ -1042,6 +1398,127 @@ try {
         respond(true, '', [
             'stats' => compact('total','active','banned','passes','onsale','revenue')
         ]);
+    }
+
+    if ($action === 'request_refund') {
+        require_login();
+        $gpid = (int) ($_POST['gpid'] ?? 0);
+        if ($gpid < 1) respond(false, 'Invalid game pass.');
+
+        $username = (string) ($_SESSION['username'] ?? '');
+        $stmt = $conn->prepare('SELECT pid, uname FROM players WHERE uname = ? LIMIT 1');
+        $stmt->bind_param('s', $username);
+        $stmt->execute();
+        $player = $stmt->get_result()->fetch_assoc();
+        if (!$player) respond(false, 'Player profile not found.');
+
+        $pid = (int) $player['pid'];
+
+        $stmt = $conn->prepare('SELECT act FROM player_gamepasses WHERE pid = ? AND gpid = ? LIMIT 1');
+        $stmt->bind_param('ii', $pid, $gpid);
+        $stmt->execute();
+        $owned = $stmt->get_result()->fetch_assoc();
+        if (!$owned || (int) $owned['act'] !== 1) respond(false, 'You do not own this game pass.');
+
+        $stmt = $conn->prepare('SELECT id, status FROM refund_requests WHERE pid = ? AND gpid = ? ORDER BY id DESC LIMIT 1');
+        $stmt->bind_param('ii', $pid, $gpid);
+        $stmt->execute();
+        $existing = $stmt->get_result()->fetch_assoc();
+        if ($existing) {
+            if ($existing['status'] === 'pending') respond(false, 'You already have a pending refund request for this pass.');
+            if ($existing['status'] === 'cancelled') respond(false, 'Your refund request for this pass was already reviewed and cancelled. No further requests can be made.');
+        }
+
+        $stmt = $conn->prepare('SELECT gname FROM gamepasses WHERE gpid = ? LIMIT 1');
+        $stmt->bind_param('i', $gpid);
+        $stmt->execute();
+        $gp = $stmt->get_result()->fetch_assoc();
+        if (!$gp) respond(false, 'Game pass not found.');
+
+        $pname = (string) $player['uname'];
+        $gname = (string) $gp['gname'];
+        $stmt = $conn->prepare('INSERT INTO refund_requests (pid, gpid, pname, gname) VALUES (?, ?, ?, ?)');
+        $stmt->bind_param('iiss', $pid, $gpid, $pname, $gname);
+        $stmt->execute();
+
+        respond(true, 'Refund request submitted. Staff will review it shortly.');
+    }
+
+    if ($action === 'refund_requests') {
+        require_login();
+        $role = (string) ($_SESSION['role'] ?? '');
+
+        if (in_array($role, ['admin', 'staff'], true)) {
+            $rows = $conn->query(
+                "SELECT id, pid, gpid, pname, gname, status, created_at
+                 FROM refund_requests WHERE status = 'pending'
+                 ORDER BY created_at ASC"
+            )->fetch_all(MYSQLI_ASSOC);
+        } else {
+            $username = (string) ($_SESSION['username'] ?? '');
+            $stmt = $conn->prepare(
+                "SELECT rr.id, rr.gpid, rr.status
+                 FROM refund_requests rr
+                 JOIN players p ON p.pid = rr.pid
+                 WHERE p.uname = ?
+                   AND rr.id IN (SELECT MAX(id) FROM refund_requests GROUP BY pid, gpid)
+                   AND rr.status IN ('pending', 'cancelled')"
+            );
+            $stmt->bind_param('s', $username);
+            $stmt->execute();
+            $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        }
+
+        respond(true, '', ['requests' => $rows]);
+    }
+
+    if ($action === 'resolve_refund') {
+        require_staff_or_admin();
+        $id         = (int) ($_POST['id'] ?? 0);
+        $resolution = value('resolution', '') ?? '';
+
+        if ($id < 1) respond(false, 'Invalid request.');
+        if (!in_array($resolution, ['accept', 'cancel'], true)) respond(false, 'Invalid resolution.');
+
+        $stmt = $conn->prepare('SELECT * FROM refund_requests WHERE id = ? AND status = "pending" LIMIT 1');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $req = $stmt->get_result()->fetch_assoc();
+        if (!$req) respond(false, 'Request not found or already resolved.');
+
+        $resolvedBy = (string) ($_SESSION['username'] ?? 'staff');
+
+        if ($resolution === 'accept') {
+            $inactive = 0;
+            $stmt = $conn->prepare('UPDATE player_gamepasses SET act = ? WHERE pid = ? AND gpid = ?');
+            $stmt->bind_param('iii', $inactive, $req['pid'], $req['gpid']);
+            $stmt->execute();
+
+            $stmt = $conn->prepare('SELECT price FROM gamepasses WHERE gpid = ? LIMIT 1');
+            $stmt->bind_param('i', $req['gpid']);
+            $stmt->execute();
+            $gp    = $stmt->get_result()->fetch_assoc();
+            $price = $gp ? -1 * (int) $gp['price'] : 0;
+
+            record_transaction(
+                $conn, 'refund',
+                (int) $req['pid'], (string) $req['pname'],
+                (int) $req['gpid'], (string) $req['gname'],
+                $price,
+                'Refund approved by ' . $resolvedBy . '.'
+            );
+            write_audit($conn, 'player_gamepass', 'REFUND',
+                $req['pname'] . ' / ' . $req['gname'],
+                'Refund request accepted by ' . $resolvedBy . '.'
+            );
+        }
+
+        $status = $resolution === 'accept' ? 'accepted' : 'cancelled';
+        $stmt = $conn->prepare('UPDATE refund_requests SET status = ?, resolved_at = NOW(), resolved_by = ? WHERE id = ?');
+        $stmt->bind_param('ssi', $status, $resolvedBy, $id);
+        $stmt->execute();
+
+        respond(true, $resolution === 'accept' ? 'Refund accepted and processed.' : 'Refund request cancelled.');
     }
 
     respond(false, 'Unknown request.');

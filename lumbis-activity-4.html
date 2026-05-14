@@ -7,6 +7,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="lumbis-activity-4.css">
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -197,6 +199,10 @@
             </div>
             <div class="sb-item" onclick="showPage('p-gamepasses',this)">
                 <i class="fa-solid fa-ticket"></i> Game Passes
+            </div>
+            <div class="sb-item" onclick="showPage('p-transactions',this)">
+                <i class="fa-solid fa-money-bill-transfer"></i> Transactions
+                <span class="sb-badge" id="tx-req-badge" style="display:none;">0</span>
             </div>
             <div class="sb-item" onclick="showPage('p-audit',this)">
                 <i class="fa-solid fa-clock-rotate-left"></i> Audit Log
@@ -415,6 +421,68 @@
             </div>
         </div>
 
+        <!-- =================== TRANSACTIONS =================== -->
+        <div class="page" id="p-transactions">
+            <div class="page-header">
+                <h2>Transactions</h2>
+                <p>Record game pass gifts and refunds. Purchases are recorded automatically when a player buys from the Game Passes catalog.</p>
+            </div>
+
+            <div class="tx-actions">
+                <div class="tx-card">
+                    <div class="tx-icon tx-icon-green"><i class="fa-solid fa-gift"></i></div>
+                    <div class="tx-body">
+                        <h3>Gift Game Pass</h3>
+                        <p>Grant a free game pass to a player. Staff and admin only.</p>
+                        <button class="btn btn-ghost admin-action" onclick="openTxModal('gift')">
+                            <i class="fa-solid fa-gift"></i> New Gift
+                        </button>
+                    </div>
+                </div>
+                <div class="tx-card">
+                    <div class="tx-icon tx-icon-red"><i class="fa-solid fa-rotate-left"></i></div>
+                    <div class="tx-body">
+                        <h3>Refund Game Pass</h3>
+                        <p>Deactivate a player's pass and record a refund. Staff and admin only.</p>
+                        <button class="btn btn-ghost admin-action" onclick="openTxModal('refund')">
+                            <i class="fa-solid fa-rotate-left"></i> New Refund
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card admin-action" style="margin-top:18px;" id="refund-req-card">
+                <div class="card-head">
+                    <h3><i class="fa-solid fa-clock-rotate-left" style="color:var(--red);margin-right:6px;"></i>Refund Requests</h3>
+                    <span class="chip chip-red" id="refund-req-count">0 pending</span>
+                </div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead><tr>
+                            <th>#</th><th>Player</th><th>Game Pass</th><th>Requested At</th><th>Actions</th>
+                        </tr></thead>
+                        <tbody id="tb-refund-req"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:18px;">
+                <div class="card-head">
+                    <h3>Recent Transactions</h3>
+                    <span class="chip chip-blue" id="tx-recent-count">0 records</span>
+                </div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead><tr>
+                            <th>#</th><th>Type</th><th>Player</th><th>Game Pass</th>
+                            <th>Amount (R$)</th><th>Actor</th><th>Date / Time</th>
+                        </tr></thead>
+                        <tbody id="tb-tx-recent"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- =================== AUDIT LOG =================== -->
         <div class="page" id="p-audit">
             <div class="page-header">
@@ -442,51 +510,90 @@
         <div class="page" id="p-reports">
             <div class="page-header">
                 <h2>Report Generator</h2>
-                <p>Select a report type, generate, and print or export.</p>
+                <p>Browse transaction records, filter by date or type, and export each report to Excel.</p>
             </div>
 
             <div class="card" style="margin-bottom:18px;">
-                <div class="card-head"><h3>Select Report Type</h3></div>
+                <div class="card-head"><h3>Filters</h3></div>
                 <div class="card-body">
-                    <div class="report-types">
-                        <div class="rtype sel" onclick="pickReport(this,'player-summary')">
-                            <i class="fa-solid fa-users" style="color:var(--blue);"></i>
-                            <h4>Player Summary</h4>
-                            <p>All players with status and owned passes</p>
+                    <div class="filter-row">
+                        <div class="form-group">
+                            <label>Transaction Type</label>
+                            <select id="rpt-type" onchange="applyReportFilters()">
+                                <option value="">All Types</option>
+                                <option value="purchase">Purchase</option>
+                                <option value="gift">Gift</option>
+                                <option value="refund">Refund</option>
+                            </select>
                         </div>
-                        <div class="rtype" onclick="pickReport(this,'revenue')">
-                            <i class="fa-solid fa-coins" style="color:var(--yellow);"></i>
-                            <h4>Revenue Report</h4>
-                            <p>Pass pricing and purchase revenue</p>
+                        <div class="form-group">
+                            <label>Date From</label>
+                            <input type="date" id="rpt-from" onchange="applyReportFilters()">
                         </div>
-                        <div class="rtype" onclick="pickReport(this,'ownership')">
-                            <i class="fa-solid fa-ticket" style="color:var(--red);"></i>
-                            <h4>Pass Ownership</h4>
-                            <p>Who owns which passes and how they got them</p>
+                        <div class="form-group">
+                            <label>Date To</label>
+                            <input type="date" id="rpt-to" onchange="applyReportFilters()">
                         </div>
-                        <div class="rtype" onclick="pickReport(this,'audit')">
-                            <i class="fa-solid fa-clock-rotate-left" style="color:var(--green);"></i>
-                            <h4>Audit Report</h4>
-                            <p>Full record of all data change events</p>
+                        <div class="form-group filter-actions">
+                            <label>&nbsp;</label>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                <button class="btn btn-blue" onclick="applyReportFilters()" style="width:auto;">
+                                    <i class="fa-solid fa-filter"></i> Apply
+                                </button>
+                                <button class="btn btn-ghost" onclick="clearReportFilters()" style="width:auto;">
+                                    <i class="fa-solid fa-eraser"></i> Clear
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                        <button class="btn btn-red" onclick="genReport()" style="width:auto;">
-                            <i class="fa-solid fa-file-circle-plus"></i> Generate Report
-                        </button>
-                        <button class="btn btn-ghost" onclick="printReport()" style="width:auto;">
-                            <i class="fa-solid fa-print"></i> Print / Export
-                        </button>
                     </div>
                 </div>
             </div>
 
-            <div class="card" id="rpt-out" style="display:none;">
+            <div class="card" style="margin-bottom:18px;">
                 <div class="card-head">
-                    <h3 id="rpt-title">Report</h3>
-                    <span class="chip chip-green" id="rpt-ts"></span>
+                    <h3>Export Reports to Excel</h3>
+                    <span class="chip chip-blue" id="rpt-count">0 rows</span>
                 </div>
-                <div id="rpt-body" class="tbl-wrap"></div>
+                <div class="card-body">
+                    <div class="export-row">
+                        <button class="btn btn-blue" onclick="exportExcel('purchase')">
+                            <i class="fa-solid fa-file-excel"></i> Export Purchase Report
+                        </button>
+                        <button class="btn btn-green" onclick="exportExcel('gift')">
+                            <i class="fa-solid fa-file-excel"></i> Export Gift Report
+                        </button>
+                        <button class="btn btn-red" onclick="exportExcel('refund')">
+                            <i class="fa-solid fa-file-excel"></i> Export Refund Report
+                        </button>
+                        <button class="btn" style="background:var(--purple,#7c3aed);color:#fff;" onclick="exportExcelAll()">
+                            <i class="fa-solid fa-file-excel"></i> Export All
+                        </button>
+                    </div>
+                    <p class="export-hint">Each export contains a styled data sheet (header, logo, signature) and a separate chart sheet.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <h3>Transaction Data Grid</h3>
+                    <span class="chip chip-green" id="rpt-ts">&nbsp;</span>
+                </div>
+                <div class="tbl-wrap">
+                    <table class="data-grid" id="rpt-grid">
+                        <thead><tr>
+                            <th class="sortable" data-key="tid">#<i class="fa-solid fa-sort"></i></th>
+                            <th class="sortable" data-key="ttype">Type<i class="fa-solid fa-sort"></i></th>
+                            <th class="sortable" data-key="pname">Player<i class="fa-solid fa-sort"></i></th>
+                            <th class="sortable" data-key="gname">Game Pass<i class="fa-solid fa-sort"></i></th>
+                            <th class="sortable" data-key="amount">Amount (R$)<i class="fa-solid fa-sort"></i></th>
+                            <th class="sortable" data-key="actor_username">Actor<i class="fa-solid fa-sort"></i></th>
+                            <th class="sortable" data-key="created_at">Date / Time<i class="fa-solid fa-sort"></i></th>
+                            <th>Notes</th>
+                        </tr></thead>
+                        <tbody id="tb-rpt"></tbody>
+                    </table>
+                </div>
+                <div class="dg-pager" id="rpt-pager"></div>
             </div>
         </div>
 
@@ -833,6 +940,51 @@
         <div class="modal-foot">
             <button class="btn btn-ghost" onclick="closeModal('m-editpass')">Cancel</button>
             <button class="btn btn-blue" onclick="updateGamepass()">Save Changes</button>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     MODAL: TRANSACTION (Purchase / Gift / Refund)
+================================================================ -->
+<div class="modal-bg account-auth-modal" id="m-tx">
+    <div class="modal">
+        <div class="modal-head">
+            <h3 id="tx-modal-title"><i class="fa-solid fa-money-bill-transfer" style="color:var(--red);"></i> New Transaction</h3>
+            <button class="modal-close" onclick="closeModal('m-tx')"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <p id="tx-modal-sub" class="tx-modal-sub">Record a new transaction. Your account will be saved as the actor.</p>
+        <input type="hidden" id="tx-type">
+
+        <div class="form-group" id="tx-player-wrap">
+            <label>Player</label>
+            <select id="tx-pid">
+                <option value="">— Select a player —</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Game Pass</label>
+            <select id="tx-gpid">
+                <option value="">— Select a game pass —</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Notes <span style="color:var(--text-3);font-weight:400;">(optional)</span></label>
+            <input type="text" id="tx-notes" maxlength="255" placeholder="Reference number, reason, etc.">
+        </div>
+
+        <div class="account-defaults">
+            <span><i class="fa-solid fa-user-shield"></i> Actor: <b id="tx-actor-name">—</b></span>
+            <span><i class="fa-solid fa-clock"></i> Time: <b id="tx-actor-time">—</b></span>
+        </div>
+
+        <div class="modal-foot">
+            <button class="btn btn-ghost" onclick="closeModal('m-tx')">Cancel</button>
+            <button class="btn btn-red" id="tx-submit" onclick="submitTransaction()">
+                <i class="fa-solid fa-check"></i> Save Transaction
+            </button>
         </div>
     </div>
 </div>

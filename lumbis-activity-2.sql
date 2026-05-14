@@ -292,6 +292,34 @@ INSERT IGNORE INTO `accounts` (`uid`, `username`, `password_hash`, `full_name`, 
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `transactions`
+-- Records the three primary business transactions (purchase / gift / refund)
+-- with the logged-in actor's UID and a timestamp.
+--
+
+CREATE TABLE IF NOT EXISTS `transactions` (
+  `tid` int(11) NOT NULL AUTO_INCREMENT,
+  `ttype` varchar(20) NOT NULL,
+  `actor_uid` int(11) NOT NULL,
+  `actor_username` varchar(50) NOT NULL,
+  `actor_role` varchar(20) NOT NULL DEFAULT 'user',
+  `pid` int(11) DEFAULT NULL,
+  `pname` varchar(50) DEFAULT NULL,
+  `gpid` int(11) DEFAULT NULL,
+  `gname` varchar(80) DEFAULT NULL,
+  `amount` int(11) NOT NULL DEFAULT 0,
+  `notes` varchar(255) DEFAULT NULL,
+  `status` varchar(20) NOT NULL DEFAULT 'completed',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`tid`),
+  KEY `ttype` (`ttype`),
+  KEY `actor_uid` (`actor_uid`),
+  KEY `created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Stand-in structure for view `player_names`
 -- (See below for the actual view)
 --

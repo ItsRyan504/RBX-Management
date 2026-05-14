@@ -36,6 +36,7 @@ let DB_PLAYERS = [];
 let DB_GAMEPASSES = [];
 let DB_TRANSACTIONS = [];
 let DB_AUDIT = [];
+let DB_REFUND_REQUESTS = [];
 
 // legacy badge helpers kept for reports
 
@@ -169,13 +170,14 @@ function pickGender(el) {
    APP NAVIGATION
 ======================================================== */
 const PAGE_TITLES = {
-    'p-dash':       'Dashboard',
-    'p-accounts':   'Accounts',
-    'p-players':    'Players',
-    'p-gamepasses': 'Game Passes',
-    'p-audit':      'Audit Log',
-    'p-reports':    'Report Generator',
-    'p-about':      'About',
+    'p-dash':         'Dashboard',
+    'p-accounts':     'Accounts',
+    'p-players':      'Players',
+    'p-gamepasses':   'Game Passes',
+    'p-transactions': 'Transactions',
+    'p-audit':        'Audit Log',
+    'p-reports':      'Report Generator',
+    'p-about':        'About',
 };
 
 function showPage(pid, navEl) {
@@ -184,6 +186,8 @@ function showPage(pid, navEl) {
     document.getElementById(pid).classList.add('active');
     navEl.classList.add('active');
     document.getElementById('tb-title').textContent = PAGE_TITLES[pid] || '';
+    if (pid === 'p-reports') loadTxs();
+    if (pid === 'p-transactions') loadRefundRequests();
     /* close sidebar on mobile after nav */
     if (window.innerWidth <= 700) closeSidebar();
 }
@@ -281,6 +285,15 @@ function renderGP(data) {
                         <button class="btn btn-ghost" onclick="printReceipt(${Number(g.gpid)}, '${jsString(g.gname)}')" style="padding:5px 11px;font-size:.75rem;">
                             <i class="fa-solid fa-receipt"></i> Receipt
                         </button>
+                        ${(() => {
+                            const req = DB_REFUND_REQUESTS.find(r => Number(r.gpid) === Number(g.gpid));
+                            if (!req) return `
+                                <button class="btn btn-ghost" onclick="requestRefund(${Number(g.gpid)}, '${jsString(g.gname)}')" style="padding:5px 11px;font-size:.75rem;color:var(--red);">
+                                    <i class="fa-solid fa-rotate-left"></i> Refund
+                                </button>`;
+                            if (req.status === 'pending') return `<span style="color:var(--yellow);font-size:.75rem;padding:5px 2px;"><i class="fa-solid fa-clock"></i> Refund Pending</span>`;
+                            return `<span style="color:var(--text-3);font-size:.75rem;padding:5px 2px;"><i class="fa-solid fa-ban"></i> Refund Unavailable</span>`;
+                        })()}
                     ` : ''}
                 ` : `<span style="color:var(--text-3);font-size:.76rem;"><i class="fa-solid fa-eye"></i> View only</span>`}
             </td>
@@ -366,6 +379,65 @@ async function loadAudit() {
     if (!res.ok) return;
     DB_AUDIT = res.audit || [];
     renderAudit(DB_AUDIT);
+}
+
+async function loadRefundRequests() {
+    const res = await apiPost('refund_requests');
+    if (!res.ok) return;
+    DB_REFUND_REQUESTS = res.requests || [];
+    if (canManageOperations()) {
+        renderRefundRequests(DB_REFUND_REQUESTS);
+        const badge = document.getElementById('tx-req-badge');
+        if (badge) {
+            const count = DB_REFUND_REQUESTS.length;
+            badge.textContent = count;
+            badge.style.display = count > 0 ? '' : 'none';
+        }
+    }
+    renderGP(DB_GAMEPASSES);
+}
+
+function renderRefundRequests(data) {
+    const tb   = document.getElementById('tb-refund-req');
+    const chip = document.getElementById('refund-req-count');
+    if (!tb) return;
+    if (chip) chip.textContent = `${data.length} pending`;
+    if (!data.length) {
+        tb.innerHTML = '<tr><td colspan="5"><div class="empty"><i class="fa-solid fa-circle-check"></i><p>No pending refund requests.</p></div></td></tr>';
+        return;
+    }
+    tb.innerHTML = data.map(r => `
+        <tr>
+            <td style="color:var(--text-3);font-size:.78rem;">${esc(r.id)}</td>
+            <td><b>${esc(r.pname)}</b></td>
+            <td><span class="ptag"><i class="fa-solid fa-ticket"></i>${esc(r.gname)}</span></td>
+            <td style="color:var(--text-3);font-size:.76rem;">${esc(r.created_at)}</td>
+            <td style="display:flex;gap:6px;">
+                <button class="btn btn-green" onclick="resolveRefund(${Number(r.id)}, 'accept')" style="padding:5px 11px;font-size:.75rem;">
+                    <i class="fa-solid fa-check"></i> Accept
+                </button>
+                <button class="btn btn-ghost" onclick="resolveRefund(${Number(r.id)}, 'cancel')" style="padding:5px 11px;font-size:.75rem;color:var(--red);">
+                    <i class="fa-solid fa-xmark"></i> Cancel
+                </button>
+            </td>
+        </tr>`).join('');
+}
+
+async function requestRefund(gpid, gname) {
+    if (!confirm(`Request a refund for "${gname}"?\nStaff will review and approve or cancel your request.`)) return;
+    const res = await apiPost('request_refund', { gpid });
+    if (!res.ok) { toast('err', res.message); return; }
+    toast('ok', res.message);
+    await loadRefundRequests();
+}
+
+async function resolveRefund(id, resolution) {
+    const label = resolution === 'accept' ? 'accept and process this refund' : 'cancel this refund request';
+    if (!confirm(`Are you sure you want to ${label}?`)) return;
+    const res = await apiPost('resolve_refund', { id, resolution });
+    if (!res.ok) { toast('err', res.message); return; }
+    toast('ok', res.message);
+    await Promise.all([loadRefundRequests(), loadTxs(), loadTransactions(), loadStats()]);
 }
 
 async function loadStats() {
@@ -572,137 +644,710 @@ document.querySelectorAll('.modal-bg').forEach(bg =>
 );
 
 /* ========================================================
-   REPORT GENERATOR
+   TRANSACTIONS — three primary transactions
 ======================================================== */
-let currentReport = 'player-summary';
+let DB_TX = [];
 
-function pickReport(el, type) {
-    document.querySelectorAll('.rtype').forEach(r => r.classList.remove('sel'));
-    el.classList.add('sel');
-    currentReport = type;
-    document.getElementById('rpt-out').style.display = 'none';
+function txTypeMeta(type) {
+    const meta = {
+        purchase: { label: 'Purchase', icon: 'fa-cart-shopping', color: 'var(--blue)', badge: 'b-purchase' },
+        gift:     { label: 'Gift',     icon: 'fa-gift',          color: 'var(--green)', badge: 'b-gift' },
+        refund:   { label: 'Refund',   icon: 'fa-rotate-left',   color: 'var(--red)', badge: 'b-admin' },
+    };
+    return meta[type] || { label: type || '—', icon: 'fa-receipt', color: 'var(--text-2)', badge: 'b-unknown' };
 }
 
-function genReport() {
-    const out   = document.getElementById('rpt-out');
-    const body  = document.getElementById('rpt-body');
-    const title = document.getElementById('rpt-title');
-    const ts    = document.getElementById('rpt-ts');
+function fmtMoney(n) {
+    const v = Number(n) || 0;
+    if (v === 0) return 'Free';
+    return (v < 0 ? '-R$ ' : 'R$ ') + Math.abs(v);
+}
 
-    out.style.display = 'block';
-    ts.textContent    = 'Generated: ' + new Date().toLocaleString();
-
-    switch (currentReport) {
-        case 'player-summary':
-            title.textContent = 'Player Summary Report';
-            body.innerHTML = `<table>
-                <thead><tr><th>PID</th><th>Username</th><th>Join Date</th><th>Status</th><th>Passes</th></tr></thead>
-                <tbody>${DB_PLAYERS.map(p => `<tr>
-                    <td>${esc(p.pid)}</td><td><b>${esc(p.uname)}</b></td><td>${esc(p.jdate)}</td>
-                    <td>${actBadge(p.stat === 'active' ? 1 : 0, p.stat)}</td>
-                    <td>${esc(p.pass_count ?? 0)}</td>
-                </tr>`).join('')}</tbody>
-            </table>`;
-            break;
-
-        case 'revenue': {
-            title.textContent = 'Revenue Report';
-            const rev = DB_TRANSACTIONS
-                .filter(r => r.src === 'purchase' && Number(r.act) === 1)
-                .reduce((s, r) => s + (Number(DB_GAMEPASSES.find(g => g.gname === r.gname)?.price) || 0), 0);
-            body.innerHTML = `
-                <div style="padding:16px 16px 0;">
-                    <div class="alert alert-ok">
-                        <i class="fa-solid fa-coins"></i>
-                        <span>Total Revenue from Active Purchases: <b>R$ ${rev}</b></span>
-                    </div>
-                </div>
-                <table>
-                    <thead><tr><th>GPID</th><th>Name</th><th>Price (R$)</th><th>Benefit</th><th>For Sale</th></tr></thead>
-                    <tbody>${DB_GAMEPASSES.map(g => `<tr>
-                        <td>${esc(g.gpid)}</td><td><b>${esc(g.gname)}</b></td>
-                        <td style="font-weight:800;color:var(--yellow);">${Number(g.price) ? 'R$ ' + g.price : 'Free'}</td>
-                        <td>${esc(g.benefit)}</td>
-                        <td><span class="badge ${Number(g.sale) ? 'b-on' : 'b-off'}">${Number(g.sale) ? 'On Sale' : 'Off Sale'}</span></td>
-                    </tr>`).join('')}</tbody>
-                </table>`;
-            break;
-        }
-
-        case 'ownership':
-            title.textContent = 'Pass Ownership Report';
-            body.innerHTML = `<table>
-                <thead><tr><th>Player</th><th>Game Pass</th><th>Source</th><th>Status</th></tr></thead>
-                <tbody>${DB_TRANSACTIONS.map(r => `<tr>
-                    <td><b>${esc(r.uname)}</b></td>
-                    <td><span class="ptag"><i class="fa-solid fa-ticket"></i>${esc(r.gname)}</span></td>
-                    <td>${srcBadge(r.src)}</td>
-                    <td>${actBadge(Number(r.act))}</td>
-                </tr>`).join('')}</tbody>
-            </table>`;
-            break;
-
-        case 'audit':
-            title.textContent = 'Audit Log Report';
-            body.innerHTML = `<table>
-                <thead><tr>
-                    <th>ID</th><th>Module</th><th>Action</th><th>Actor</th><th>Target</th><th>Details</th><th>Timestamp</th>
-                </tr></thead>
-                <tbody>${DB_AUDIT.map(a => `<tr>
-                    <td>${esc(a.id)}</td>
-                    <td>${esc(a.module || 'system')}</td>
-                    <td>${actionBadge(a.action)}</td>
-                    <td><b>${esc(a.actor || '-')}</b></td>
-                    <td>${esc(a.target || '-')}</td>
-                    <td>${esc(a.details || '-')}</td>
-                    <td style="font-size:.76rem;">${esc(a.ts)}</td>
-                </tr>`).join('')}</tbody>
-            </table>`;
-            break;
+function openTxModal(type) {
+    const role = CURRENT_USER?.role || '';
+    if ((type === 'gift' || type === 'refund') && !['admin', 'staff'].includes(role)) {
+        toast('err', 'Only staff or admin can ' + (type === 'gift' ? 'gift passes' : 'issue refunds') + '.');
+        return;
     }
 
-    toast('ok', 'Report generated successfully!');
-    out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('tx-type').value = type;
+    const meta = txTypeMeta(type);
+    document.getElementById('tx-modal-title').innerHTML =
+        `<i class="fa-solid ${meta.icon}" style="color:${meta.color};"></i> New ${meta.label}`;
+    document.getElementById('tx-modal-sub').textContent = {
+        purchase: 'Record a paid game pass purchase for a player. The amount is taken from the pass price.',
+        gift:     'Grant a free game pass to a player. The pass will be marked as a gift.',
+        refund:   'Deactivate a player\'s pass and record the refund. Amount is logged as a negative value.',
+    }[type] || '';
+
+    /* Populate player + pass selects from the data we already loaded. */
+    const txPid = document.getElementById('tx-pid');
+    const txGpid = document.getElementById('tx-gpid');
+    const playerWrap = document.getElementById('tx-player-wrap');
+
+    /* For a user-role buying for themselves, hide the player picker. */
+    if (type === 'purchase' && role === 'user') {
+        playerWrap.style.display = 'none';
+    } else {
+        playerWrap.style.display = '';
+        txPid.innerHTML = '<option value="">— Select a player —</option>' +
+            DB_PLAYERS
+                .filter(p => p.stat === 'active' || type === 'refund')
+                .map(p => `<option value="${Number(p.pid)}">${esc(p.uname)} (#${esc(p.pid)})</option>`)
+                .join('');
+    }
+
+    /* Pass options: refund needs owned/active passes; purchase needs on-sale; gift any. */
+    let passOptions;
+    if (type === 'refund') {
+        passOptions = DB_GAMEPASSES;
+    } else if (type === 'purchase') {
+        passOptions = DB_GAMEPASSES.filter(g => Number(g.sale) === 1);
+    } else {
+        passOptions = DB_GAMEPASSES;
+    }
+    txGpid.innerHTML = '<option value="">— Select a game pass —</option>' +
+        passOptions.map(g => {
+            const tag = Number(g.price) ? `R$ ${g.price}` : 'Free';
+            return `<option value="${Number(g.gpid)}">${esc(g.gname)} — ${tag}</option>`;
+        }).join('');
+
+    document.getElementById('tx-notes').value = '';
+    document.getElementById('tx-actor-name').textContent =
+        (CURRENT_USER?.full_name || CURRENT_USER?.username || '—') + ' (' + roleLabel(CURRENT_USER?.role) + ')';
+    document.getElementById('tx-actor-time').textContent = new Date().toLocaleString();
+
+    const submit = document.getElementById('tx-submit');
+    submit.className = 'btn ' + (type === 'gift' ? 'btn-green' : type === 'refund' ? 'btn-red' : 'btn-blue');
+    submit.innerHTML = `<i class="fa-solid ${meta.icon}"></i> Save ${meta.label}`;
+
+    openModal('m-tx');
 }
 
-function printReport() {
-    const content = document.getElementById('rpt-body').innerHTML;
-    if (!content) { toast('err', 'Generate a report first.'); return; }
-    const w = window.open('', '_blank');
-    w.document.write(`<!DOCTYPE html><html><head><title>RBXGPM Report &mdash; ${
-        document.getElementById('rpt-title').textContent
-    }</title>
-    <style>
-        body { font-family:Arial,sans-serif; padding:28px; color:#111; }
-        h1   { font-size:18px; margin-bottom:4px; }
-        p    { font-size:11px; color:#666; margin-bottom:16px; }
-        table{ width:100%; border-collapse:collapse; font-size:12px; }
-        th   { background:#f5f5f5; padding:8px 10px; border:1px solid #ddd;
-               text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.5px; }
-        td   { padding:7px 10px; border:1px solid #eee; }
-        tr:nth-child(even) td { background:#fafafa; }
-        .badge { padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; display:inline-block; }
-        .b-active  { background:#dcfce7; color:#16a34a; }
-        .b-banned  { background:#fee2e2; color:#dc2626; }
-        .b-insert  { background:#dcfce7; color:#16a34a; }
-        .b-update  { background:#dbeafe; color:#2563eb; }
-        .b-delete  { background:#fee2e2; color:#dc2626; }
-        .b-purchase{ background:#dbeafe; color:#2563eb; }
-        .b-gift    { background:#dcfce7; color:#16a34a; }
-        .b-promo   { background:#ede9fe; color:#7c3aed; }
-        .b-admin   { background:#fee2e2; color:#dc2626; }
-        .b-on      { background:#dbeafe; color:#2563eb; }
-        .b-off     { background:#fef9c3; color:#ca8a04; }
-        .ptag      { font-size:11px; background:#f0f0f0; padding:2px 7px; border-radius:4px; display:inline-block; }
-        .alert-ok  { background:#dcfce7; border:1px solid #86efac; padding:10px 14px;
-                     border-radius:6px; font-size:12px; margin-bottom:14px; color:#166534; }
-    </style></head><body>
-    <h1>RBXGPM &mdash; ${document.getElementById('rpt-title').textContent}</h1>
-    <p>${document.getElementById('rpt-ts').textContent}</p>
-    ${content}
-    </body></html>`);
-    w.document.close();
-    w.print();
+async function submitTransaction() {
+    const type  = document.getElementById('tx-type').value;
+    const pid   = document.getElementById('tx-pid').value;
+    const gpid  = document.getElementById('tx-gpid').value;
+    const notes = document.getElementById('tx-notes').value.trim();
+
+    if (!gpid) { toast('err', 'Please choose a game pass.'); return; }
+    const role = CURRENT_USER?.role || '';
+    const needsPlayer = !(type === 'purchase' && role === 'user');
+    if (needsPlayer && !pid) { toast('err', 'Please choose a player.'); return; }
+
+    const action = { purchase: 'tx_purchase', gift: 'tx_gift', refund: 'tx_refund' }[type];
+    if (!action) { toast('err', 'Unknown transaction type.'); return; }
+
+    const res = await apiPost(action, { gpid, pid: pid || 0, notes });
+    if (!res.ok) { toast('err', res.message); return; }
+
+    toast('ok', res.message || 'Transaction recorded.');
+    closeModal('m-tx');
+
+    await Promise.all([
+        loadTxs(),
+        loadGamepasses(document.getElementById('gp-search')?.value.trim() || ''),
+        loadTransactions(),
+        loadStats(),
+    ]);
+}
+
+async function loadTxs() {
+    const res = await apiPost('tx_list');
+    if (!res.ok) { return; }
+    DB_TX = res.transactions || [];
+    renderTxRecent();
+    /* Always reapply filters so the data grid is ready when the user opens Reports. */
+    if (document.getElementById('rpt-grid')) applyReportFilters();
+}
+
+function renderTxRecent() {
+    const tb = document.getElementById('tb-tx-recent');
+    const chip = document.getElementById('tx-recent-count');
+    if (!tb) return;
+
+    const rows = DB_TX.slice(0, 10);
+    if (chip) chip.textContent = `${DB_TX.length} record${DB_TX.length === 1 ? '' : 's'}`;
+
+    if (!rows.length) {
+        tb.innerHTML = '<tr><td colspan="7"><div class="empty"><i class="fa-solid fa-receipt"></i><p>No transactions recorded yet.</p></div></td></tr>';
+        return;
+    }
+
+    tb.innerHTML = rows.map(t => {
+        const m = txTypeMeta(t.ttype);
+        return `<tr>
+            <td style="color:var(--text-3);font-size:.78rem;">${esc(t.tid)}</td>
+            <td><span class="badge ${m.badge}"><i class="fa-solid ${m.icon}" style="margin-right:4px;font-size:.7rem;"></i>${m.label}</span></td>
+            <td><b>${esc(t.pname || '—')}</b></td>
+            <td><span class="ptag"><i class="fa-solid fa-ticket"></i>${esc(t.gname || '—')}</span></td>
+            <td style="font-weight:800;color:${Number(t.amount) < 0 ? 'var(--red)' : 'var(--yellow)'};">${fmtMoney(t.amount)}</td>
+            <td>${esc(t.actor_username || '—')} <span style="color:var(--text-3);font-size:.7rem;">(${esc(t.actor_role)})</span></td>
+            <td style="color:var(--text-3);font-size:.76rem;">${esc(t.created_at)}</td>
+        </tr>`;
+    }).join('');
+}
+
+/* ========================================================
+   REPORT GENERATOR — Data Grid (sort + paginate + filter)
+======================================================== */
+const RPT_PAGE_SIZE = 10;
+let RPT_FILTERED = [];
+let RPT_SORT = { key: 'created_at', dir: 'desc' };
+let RPT_PAGE = 1;
+
+function applyReportFilters() {
+    const type = document.getElementById('rpt-type').value;
+    const from = document.getElementById('rpt-from').value;
+    const to   = document.getElementById('rpt-to').value;
+
+    RPT_FILTERED = DB_TX.filter(t => {
+        if (type && t.ttype !== type) return false;
+        const d = (t.created_at || '').slice(0, 10);
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+    });
+
+    RPT_PAGE = 1;
+    renderReportGrid();
+}
+
+function clearReportFilters() {
+    document.getElementById('rpt-type').value = '';
+    document.getElementById('rpt-from').value = '';
+    document.getElementById('rpt-to').value = '';
+    applyReportFilters();
+}
+
+function sortReportBy(key) {
+    if (RPT_SORT.key === key) {
+        RPT_SORT.dir = RPT_SORT.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+        RPT_SORT = { key, dir: 'asc' };
+    }
+    renderReportGrid();
+}
+
+function sortedFilteredRows() {
+    const rows = RPT_FILTERED.slice();
+    const { key, dir } = RPT_SORT;
+    const mult = dir === 'asc' ? 1 : -1;
+    const numericKeys = new Set(['tid', 'amount']);
+    rows.sort((a, b) => {
+        let av = a[key], bv = b[key];
+        if (numericKeys.has(key)) {
+            av = Number(av) || 0; bv = Number(bv) || 0;
+            return (av - bv) * mult;
+        }
+        av = String(av ?? '').toLowerCase();
+        bv = String(bv ?? '').toLowerCase();
+        if (av < bv) return -1 * mult;
+        if (av > bv) return  1 * mult;
+        return 0;
+    });
+    return rows;
+}
+
+function renderReportGrid() {
+    const tb = document.getElementById('tb-rpt');
+    const pager = document.getElementById('rpt-pager');
+    const countChip = document.getElementById('rpt-count');
+    const tsChip = document.getElementById('rpt-ts');
+    if (!tb || !pager) return;
+
+    const sorted = sortedFilteredRows();
+    const total = sorted.length;
+    const pages = Math.max(1, Math.ceil(total / RPT_PAGE_SIZE));
+    if (RPT_PAGE > pages) RPT_PAGE = pages;
+    const start = (RPT_PAGE - 1) * RPT_PAGE_SIZE;
+    const slice = sorted.slice(start, start + RPT_PAGE_SIZE);
+
+    if (countChip) countChip.textContent = `${total} row${total === 1 ? '' : 's'}`;
+    if (tsChip) tsChip.textContent = 'Generated: ' + new Date().toLocaleString();
+
+    /* Sort indicators */
+    document.querySelectorAll('#rpt-grid th.sortable').forEach(th => {
+        const key = th.getAttribute('data-key');
+        const ic = th.querySelector('i');
+        if (!ic) return;
+        if (key === RPT_SORT.key) {
+            ic.className = `fa-solid ${RPT_SORT.dir === 'asc' ? 'fa-sort-up' : 'fa-sort-down'}`;
+        } else {
+            ic.className = 'fa-solid fa-sort';
+        }
+    });
+
+    if (!slice.length) {
+        tb.innerHTML = '<tr><td colspan="8"><div class="empty"><i class="fa-solid fa-receipt"></i><p>No transactions match the current filters.</p></div></td></tr>';
+        pager.innerHTML = '';
+        return;
+    }
+
+    tb.innerHTML = slice.map(t => {
+        const m = txTypeMeta(t.ttype);
+        return `<tr>
+            <td style="color:var(--text-3);font-size:.78rem;">${esc(t.tid)}</td>
+            <td><span class="badge ${m.badge}"><i class="fa-solid ${m.icon}" style="margin-right:4px;font-size:.7rem;"></i>${m.label}</span></td>
+            <td><b>${esc(t.pname || '—')}</b></td>
+            <td><span class="ptag"><i class="fa-solid fa-ticket"></i>${esc(t.gname || '—')}</span></td>
+            <td style="font-weight:800;color:${Number(t.amount) < 0 ? 'var(--red)' : 'var(--yellow)'};">${fmtMoney(t.amount)}</td>
+            <td>${esc(t.actor_username)} <span style="color:var(--text-3);font-size:.7rem;">(${esc(t.actor_role)})</span></td>
+            <td style="color:var(--text-3);font-size:.76rem;">${esc(t.created_at)}</td>
+            <td style="color:var(--text-2);max-width:260px;">${esc(t.notes || '—')}</td>
+        </tr>`;
+    }).join('');
+
+    /* Pager */
+    const pageBtn = (n, label, disabled, active) =>
+        `<button class="dg-page ${active ? 'active' : ''}" ${disabled ? 'disabled' : ''} onclick="gotoReportPage(${n})">${label}</button>`;
+    let html = '';
+    html += pageBtn(Math.max(1, RPT_PAGE - 1), '<i class="fa-solid fa-chevron-left"></i>', RPT_PAGE <= 1, false);
+    const windowSize = 5;
+    let pStart = Math.max(1, RPT_PAGE - Math.floor(windowSize / 2));
+    let pEnd = Math.min(pages, pStart + windowSize - 1);
+    pStart = Math.max(1, pEnd - windowSize + 1);
+    for (let p = pStart; p <= pEnd; p++) {
+        html += pageBtn(p, String(p), false, p === RPT_PAGE);
+    }
+    html += pageBtn(Math.min(pages, RPT_PAGE + 1), '<i class="fa-solid fa-chevron-right"></i>', RPT_PAGE >= pages, false);
+    html += `<span class="dg-info">Page ${RPT_PAGE} of ${pages} • ${total} record${total === 1 ? '' : 's'}</span>`;
+    pager.innerHTML = html;
+}
+
+function gotoReportPage(n) {
+    RPT_PAGE = n;
+    renderReportGrid();
+}
+
+/* Wire up sortable headers once. */
+document.addEventListener('click', e => {
+    const th = e.target.closest('#rpt-grid th.sortable');
+    if (!th) return;
+    sortReportBy(th.getAttribute('data-key'));
+});
+
+/* ========================================================
+   EXCEL EXPORT (ExcelJS + Chart.js embedded chart)
+======================================================== */
+
+/* Render a Chart.js chart in an off-screen canvas and return PNG bytes. */
+async function renderChartImage(type, labels, data, title, color) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 900;
+    canvas.height = 480;
+    /* Off-screen but in DOM (Chart.js needs a real canvas). */
+    canvas.style.position = 'fixed';
+    canvas.style.left = '-10000px';
+    canvas.style.top = '-10000px';
+    document.body.appendChild(canvas);
+
+    const ctx = canvas.getContext('2d');
+    /* White background so the image looks right when embedded. */
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const chart = new Chart(ctx, {
+        type,
+        data: {
+            labels,
+            datasets: [{
+                label: title,
+                data,
+                backgroundColor: type === 'pie'
+                    ? ['#3b82f6', '#22c55e', '#e03c31', '#facc15', '#a78bfa', '#06b6d4', '#f97316', '#10b981']
+                    : color,
+                borderColor: color,
+                borderWidth: 2,
+                fill: type === 'line' ? false : true,
+                tension: 0.25,
+            }],
+        },
+        options: {
+            responsive: false,
+            animation: false,
+            plugins: {
+                legend: { display: true, position: 'bottom' },
+                title:  { display: true, text: title, font: { size: 18, weight: 'bold' } },
+            },
+            scales: type === 'pie' ? {} : {
+                x: { title: { display: true, text: 'Category' } },
+                y: { title: { display: true, text: 'Value' }, beginAtZero: true },
+            },
+        },
+    });
+
+    /* Give Chart.js a tick to paint synchronously, then read pixels. */
+    await new Promise(r => requestAnimationFrame(r));
+    const dataUrl = canvas.toDataURL('image/png');
+    chart.destroy();
+    canvas.remove();
+
+    /* Convert data URL -> base64 string (strip prefix). */
+    return dataUrl.split(',')[1];
+}
+
+/* Build a simple base64-encoded PNG logo from a canvas (placeholder logo). */
+function buildLogoPng() {
+    const c = document.createElement('canvas');
+    c.width = 240; c.height = 80;
+    const ctx = c.getContext('2d');
+    /* Dark roblox-ish background */
+    ctx.fillStyle = '#111111';
+    ctx.fillRect(0, 0, c.width, c.height);
+    /* Red accent bar */
+    ctx.fillStyle = '#e03c31';
+    ctx.fillRect(0, 0, 6, c.height);
+    /* Logo text */
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 30px Inter, Arial, sans-serif';
+    ctx.fillText('RBX', 24, 50);
+    ctx.fillStyle = '#e03c31';
+    ctx.fillText('GPM', 92, 50);
+    ctx.fillStyle = '#a8a8a8';
+    ctx.font = '13px Inter, Arial, sans-serif';
+    ctx.fillText('Game Pass Management System', 24, 70);
+    return c.toDataURL('image/png').split(',')[1];
+}
+
+function reportConfigFor(type) {
+    const configs = {
+        purchase: {
+            title:    'Purchase Transactions Report',
+            filename: 'RBXGPM_Purchase_Report',
+            color:    '4472C4',
+            chartType:'bar',
+            chartTitle:'Total Purchase Revenue by Game Pass (R$)',
+        },
+        gift: {
+            title:    'Gift Transactions Report',
+            filename: 'RBXGPM_Gift_Report',
+            color:    '70AD47',
+            chartType:'pie',
+            chartTitle:'Gifts Distributed by Game Pass',
+        },
+        refund: {
+            title:    'Refund Transactions Report',
+            filename: 'RBXGPM_Refund_Report',
+            color:    'C0504D',
+            chartType:'line',
+            chartTitle:'Refund Amounts by Game Pass (R$)',
+        },
+    };
+    return configs[type];
+}
+
+async function exportExcel(type) {
+    if (typeof ExcelJS === 'undefined') {
+        toast('err', 'Excel library is still loading. Please try again in a moment.');
+        return;
+    }
+
+    const cfg = reportConfigFor(type);
+    if (!cfg) return;
+
+    /* Filter to the requested transaction type within current filters. */
+    const typeFilter = document.getElementById('rpt-type').value;
+    const from = document.getElementById('rpt-from').value;
+    const to   = document.getElementById('rpt-to').value;
+    const rows = DB_TX.filter(t => {
+        if (t.ttype !== type) return false;
+        const d = (t.created_at || '').slice(0, 10);
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+    });
+
+    if (!rows.length) {
+        toast('err', `No ${type} transactions match the current filters.`);
+        return;
+    }
+    /* Optional: if the user has the grid filter set to a different type, warn them. */
+    if (typeFilter && typeFilter !== type) {
+        toast('info', `Exporting ${type} report (grid filter "${typeFilter}" only affects the on-screen grid).`);
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = CURRENT_USER?.username || 'RBXGPM';
+    workbook.created = new Date();
+
+    /* ============== SHEET 1 — Report Data ============== */
+    const ws = workbook.addWorksheet('Report Data');
+    ws.properties.defaultRowHeight = 18;
+
+    /* Embed logo image at top-left. */
+    const logoId = workbook.addImage({ base64: buildLogoPng(), extension: 'png' });
+    ws.addImage(logoId, { tl: { col: 0, row: 0 }, ext: { width: 200, height: 70 } });
+
+    /* Reserve rows 1-4 for the header block (logo lives in rows 1-4). */
+    ws.mergeCells('C1:H1');
+    ws.getCell('C1').value = 'RBXGPM — Game Pass Management System';
+    ws.getCell('C1').font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FF111111' } };
+
+    ws.mergeCells('C2:H2');
+    ws.getCell('C2').value = cfg.title;
+    ws.getCell('C2').font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FF' + cfg.color } };
+
+    ws.mergeCells('C3:H3');
+    ws.getCell('C3').value = 'Date Generated: ' + new Date().toLocaleString();
+    ws.getCell('C3').font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF555555' } };
+
+    ws.mergeCells('C4:H4');
+    const filterDesc = [
+        from ? `From ${from}` : null,
+        to ? `To ${to}` : null,
+    ].filter(Boolean).join(' • ') || 'All dates';
+    ws.getCell('C4').value = `Filters: ${filterDesc}  •  Type: ${type}  •  Total Records: ${rows.length}`;
+    ws.getCell('C4').font = { name: 'Arial', size: 10, color: { argb: 'FF555555' } };
+
+    /* Spacer */
+    ws.getRow(5).height = 8;
+
+    /* Column headers (row 6). */
+    const headerRowIdx = 6;
+    const headers = ['#', 'Type', 'Player', 'Game Pass', 'Amount (R$)', 'Actor', 'Role', 'Date / Time', 'Notes'];
+    const headerRow = ws.getRow(headerRowIdx);
+    headers.forEach((h, i) => {
+        const cell = headerRow.getCell(i + 1);
+        cell.value = h;
+        cell.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + cfg.color } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+            top:    { style: 'thin', color: { argb: 'FFCCCCCC' } },
+            left:   { style: 'thin', color: { argb: 'FFCCCCCC' } },
+            bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+            right:  { style: 'thin', color: { argb: 'FFCCCCCC' } },
+        };
+    });
+    headerRow.height = 22;
+
+    /* Data rows. */
+    rows.forEach((r, i) => {
+        const row = ws.getRow(headerRowIdx + 1 + i);
+        row.getCell(1).value = r.tid;
+        row.getCell(2).value = txTypeMeta(r.ttype).label;
+        row.getCell(3).value = r.pname || '';
+        row.getCell(4).value = r.gname || '';
+        row.getCell(5).value = Number(r.amount) || 0;
+        row.getCell(5).numFmt = '#,##0;[Red]-#,##0';
+        row.getCell(6).value = r.actor_username || '';
+        row.getCell(7).value = r.actor_role || '';
+        row.getCell(8).value = r.created_at || '';
+        row.getCell(9).value = r.notes || '';
+        for (let c = 1; c <= 9; c++) {
+            const cell = row.getCell(c);
+            cell.alignment = { vertical: 'middle', wrapText: true };
+            cell.border = {
+                top:    { style: 'thin', color: { argb: 'FFEEEEEE' } },
+                left:   { style: 'thin', color: { argb: 'FFEEEEEE' } },
+                bottom: { style: 'thin', color: { argb: 'FFEEEEEE' } },
+                right:  { style: 'thin', color: { argb: 'FFEEEEEE' } },
+            };
+            if (i % 2 === 1) {
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7F7F7' } };
+            }
+        }
+    });
+
+    /* Column widths */
+    [6, 12, 18, 22, 14, 18, 12, 22, 36].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+    /* Signature block. */
+    const sigStart = headerRowIdx + 1 + rows.length + 2;
+    const fullName = (CURRENT_USER?.full_name || CURRENT_USER?.username || '').trim();
+    const roleStr  = roleLabel(CURRENT_USER?.role);
+
+    ws.getRow(sigStart).height = 22;
+    ws.mergeCells(`B${sigStart}:D${sigStart}`);
+    ws.getCell(`B${sigStart}`).value = 'Prepared by: _________________________________';
+    ws.getCell(`B${sigStart}`).font = { name: 'Arial', size: 11, bold: true };
+
+    ws.mergeCells(`B${sigStart + 1}:D${sigStart + 1}`);
+    ws.getCell(`B${sigStart + 1}`).value = fullName ? `${fullName}  (${roleStr})` : `${CURRENT_USER?.username || ''}  (${roleStr})`;
+    ws.getCell(`B${sigStart + 1}`).font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF555555' } };
+
+    ws.mergeCells(`B${sigStart + 2}:D${sigStart + 2}`);
+    ws.getCell(`B${sigStart + 2}`).value = 'Signature: ____________________________________';
+    ws.getCell(`B${sigStart + 2}`).font = { name: 'Arial', size: 10, color: { argb: 'FF555555' } };
+
+    ws.mergeCells(`F${sigStart}:H${sigStart}`);
+    ws.getCell(`F${sigStart}`).value = 'Date: ____________________';
+    ws.getCell(`F${sigStart}`).font = { name: 'Arial', size: 10, color: { argb: 'FF555555' } };
+
+    /* ============== SHEET 2 — Chart ============== */
+    const ws2 = workbook.addWorksheet('Chart');
+    ws2.getCell('A1').value = 'RBXGPM — ' + cfg.chartTitle;
+    ws2.getCell('A1').font = { name: 'Arial', size: 14, bold: true };
+    ws2.mergeCells('A1:H1');
+
+    /* Aggregate amounts by game pass. */
+    const agg = new Map();
+    rows.forEach(r => {
+        const key = r.gname || '—';
+        agg.set(key, (agg.get(key) || 0) + Math.abs(Number(r.amount) || 0));
+    });
+    /* For "gift" the amount is 0 — count occurrences instead. */
+    if (type === 'gift') {
+        agg.clear();
+        rows.forEach(r => {
+            const key = r.gname || '—';
+            agg.set(key, (agg.get(key) || 0) + 1);
+        });
+    }
+
+    const labels = Array.from(agg.keys());
+    const values = Array.from(agg.values());
+
+    const chartB64 = await renderChartImage(cfg.chartType, labels, values, cfg.chartTitle, '#' + cfg.color);
+    const chartImgId = workbook.addImage({ base64: chartB64, extension: 'png' });
+    ws2.addImage(chartImgId, { tl: { col: 0, row: 2 }, ext: { width: 720, height: 384 } });
+
+    /* Legend table on the right of the chart. */
+    ws2.getCell('J3').value = 'Category';
+    ws2.getCell('K3').value = type === 'gift' ? 'Gift Count' : 'Total (R$)';
+    ['J3', 'K3'].forEach(c => {
+        ws2.getCell(c).font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        ws2.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + cfg.color } };
+    });
+    labels.forEach((label, i) => {
+        ws2.getCell(`J${4 + i}`).value = label;
+        ws2.getCell(`K${4 + i}`).value = values[i];
+        ws2.getCell(`K${4 + i}`).numFmt = '#,##0';
+    });
+    ws2.getColumn(10).width = 20;
+    ws2.getColumn(11).width = 16;
+
+    /* Save the file. */
+    const buf = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const stamp = new Date().toISOString().slice(0, 10);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${cfg.filename}_${stamp}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+
+    toast('ok', `${cfg.title} exported (${rows.length} record${rows.length === 1 ? '' : 's'}).`);
+}
+
+async function exportExcelAll() {
+    if (typeof ExcelJS === 'undefined') {
+        toast('err', 'Excel library is still loading. Please try again in a moment.');
+        return;
+    }
+
+    const from = document.getElementById('rpt-from').value;
+    const to   = document.getElementById('rpt-to').value;
+    const rows = DB_TX.filter(t => {
+        const d = (t.created_at || '').slice(0, 10);
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+    });
+
+    if (!rows.length) {
+        toast('err', 'No transactions match the current date filters.');
+        return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = CURRENT_USER?.username || 'RBXGPM';
+    workbook.created = new Date();
+
+    const ws = workbook.addWorksheet('All Transactions');
+    ws.properties.defaultRowHeight = 18;
+
+    const logoId = workbook.addImage({ base64: buildLogoPng(), extension: 'png' });
+    ws.addImage(logoId, { tl: { col: 0, row: 0 }, ext: { width: 200, height: 70 } });
+
+    ws.mergeCells('C1:I1');
+    ws.getCell('C1').value = 'RBXGPM — Game Pass Management System';
+    ws.getCell('C1').font = { name: 'Arial', size: 16, bold: true };
+
+    ws.mergeCells('C2:I2');
+    ws.getCell('C2').value = 'All Transactions Report';
+    ws.getCell('C2').font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FF4472C4' } };
+
+    ws.mergeCells('C3:I3');
+    ws.getCell('C3').value = 'Date Generated: ' + new Date().toLocaleString();
+    ws.getCell('C3').font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF555555' } };
+
+    ws.mergeCells('C4:I4');
+    const filterDesc = [from ? `From ${from}` : null, to ? `To ${to}` : null].filter(Boolean).join(' • ') || 'All dates';
+    ws.getCell('C4').value = `Filters: ${filterDesc}  •  Total Records: ${rows.length}`;
+    ws.getCell('C4').font = { name: 'Arial', size: 10, color: { argb: 'FF555555' } };
+
+    ws.getRow(5).height = 8;
+
+    const headerRowIdx = 6;
+    const headers = ['#', 'Type', 'Player', 'Game Pass', 'Amount (R$)', 'Actor', 'Role', 'Date / Time', 'Notes'];
+    const headerRow = ws.getRow(headerRowIdx);
+    headers.forEach((h, i) => {
+        const cell = headerRow.getCell(i + 1);
+        cell.value = h;
+        cell.font  = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    });
+    headerRow.height = 22;
+
+    const typeColors = { purchase: 'FF4472C4', gift: 'FF70AD47', refund: 'FFC0504D' };
+    rows.forEach((r, i) => {
+        const row = ws.getRow(headerRowIdx + 1 + i);
+        row.getCell(1).value = r.tid;
+        row.getCell(2).value = txTypeMeta(r.ttype).label;
+        row.getCell(2).font  = { name: 'Arial', size: 10, bold: true, color: { argb: typeColors[r.ttype] || 'FF333333' } };
+        row.getCell(3).value = r.pname || '';
+        row.getCell(4).value = r.gname || '';
+        row.getCell(5).value = Number(r.amount) || 0;
+        row.getCell(5).numFmt = '#,##0;[Red]-#,##0';
+        row.getCell(6).value = r.actor_username || '';
+        row.getCell(7).value = r.actor_role || '';
+        row.getCell(8).value = r.created_at || '';
+        row.getCell(9).value = r.notes || '';
+        for (let c = 1; c <= 9; c++) {
+            const cell = row.getCell(c);
+            cell.alignment = { vertical: 'middle', wrapText: true };
+            cell.border = { top: { style: 'thin', color: { argb: 'FFEEEEEE' } }, left: { style: 'thin', color: { argb: 'FFEEEEEE' } }, bottom: { style: 'thin', color: { argb: 'FFEEEEEE' } }, right: { style: 'thin', color: { argb: 'FFEEEEEE' } } };
+            if (i % 2 === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7F7F7' } };
+        }
+    });
+
+    [6, 12, 18, 22, 14, 18, 12, 22, 36].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+    /* Chart sheet — breakdown by type */
+    const ws2 = workbook.addWorksheet('Summary');
+    ws2.getCell('A1').value = 'RBXGPM — Transaction Breakdown by Type';
+    ws2.getCell('A1').font = { name: 'Arial', size: 14, bold: true };
+    ws2.mergeCells('A1:H1');
+
+    const typeCounts = { purchase: 0, gift: 0, refund: 0 };
+    rows.forEach(r => { if (typeCounts[r.ttype] !== undefined) typeCounts[r.ttype]++; });
+    const chartB64 = await renderChartImage('pie', Object.keys(typeCounts), Object.values(typeCounts), 'Transactions by Type', '#4472C4');
+    const chartImgId = workbook.addImage({ base64: chartB64, extension: 'png' });
+    ws2.addImage(chartImgId, { tl: { col: 0, row: 2 }, ext: { width: 480, height: 320 } });
+
+    ws2.getCell('J3').value = 'Type';      ws2.getCell('K3').value = 'Count';
+    ['J3','K3'].forEach(c => { ws2.getCell(c).font = { bold: true, color: { argb: 'FFFFFFFF' } }; ws2.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } }; });
+    Object.entries(typeCounts).forEach(([type, count], i) => {
+        ws2.getCell(`J${4 + i}`).value = type.charAt(0).toUpperCase() + type.slice(1);
+        ws2.getCell(`K${4 + i}`).value = count;
+    });
+    ws2.getColumn(10).width = 16; ws2.getColumn(11).width = 10;
+
+    const buf  = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const stamp = new Date().toISOString().slice(0, 10);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `RBXGPM_All_Transactions_${stamp}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast('ok', `All Transactions Report exported (${rows.length} record${rows.length === 1 ? '' : 's'}).`);
 }
 
 /* ========================================================
@@ -1001,7 +1646,7 @@ function applyRoleUI(role) {
         ? []
         : isStaff
             ? ['p-accounts']
-            : ['p-accounts', 'p-players', 'p-audit', 'p-reports'];
+            : ['p-accounts', 'p-players', 'p-transactions', 'p-audit'];
 
     hidden.forEach(pid => {
         const nav = document.querySelector(`.sb-item[onclick*="${pid}"]`);
@@ -1035,9 +1680,11 @@ function applyRoleUI(role) {
 async function renderAll() {
     updateDate();
     await loadGamepasses();
-    const tasks = [loadStats(), loadTransactions()];
+    const tasks = [loadStats(), loadTransactions(), loadTxs(), loadRefundRequests()];
+    /* Players list is needed by the transaction modal selects for all signed-in users. */
+    tasks.push(loadPlayers());
     if (canManageOperations()) {
-        tasks.push(loadPlayers(), loadAudit());
+        tasks.push(loadAudit());
     }
     if (canManageAdminAccounts()) {
         tasks.push(loadAccounts());

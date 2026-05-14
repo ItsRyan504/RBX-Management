@@ -1052,3 +1052,130 @@ body.light .auth-tile {
 }
 body.light ::-webkit-scrollbar-thumb { background: #ccc; }
 body.light .form-group select option { background: #fff; color: #111; }
+
+/* ============================================================
+   TRANSACTIONS PAGE
+============================================================ */
+.tx-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+}
+.tx-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    transition: transform .15s ease, border-color .15s ease;
+}
+.tx-card:hover { transform: translateY(-2px); border-color: #333; }
+.tx-icon {
+    width: 46px; height: 46px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.15rem; flex-shrink: 0;
+}
+.tx-icon-blue  { background: var(--blue-dim);  color: var(--blue); }
+.tx-icon-green { background: var(--green-dim); color: var(--green); }
+.tx-icon-red   { background: var(--red-dim);   color: var(--red); }
+.tx-body { flex: 1; min-width: 0; }
+.tx-body h3 { font-size: .95rem; margin-bottom: 6px; color: var(--text); }
+.tx-body p {
+    font-size: .78rem;
+    color: var(--text-2);
+    line-height: 1.55;
+    margin-bottom: 12px;
+}
+.tx-body .btn { width: auto; padding: 7px 14px; font-size: .78rem; }
+
+.tx-modal-sub {
+    font-size: .78rem;
+    color: var(--text-2);
+    line-height: 1.55;
+    margin: -8px 0 16px;
+    text-align: center;
+}
+
+/* ============================================================
+   REPORT GENERATOR — FILTERS, DATA GRID, PAGINATION
+============================================================ */
+.filter-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    align-items: end;
+}
+.filter-row .form-group { margin-bottom: 0; }
+.filter-actions { min-width: 220px; }
+
+.export-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.export-row .btn { width: auto; padding: 9px 16px; font-size: .82rem; }
+.export-hint {
+    font-size: .72rem;
+    color: var(--text-3);
+    margin-top: 10px;
+}
+
+.data-grid { width: 100%; border-collapse: collapse; }
+.data-grid th.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: background .15s ease, color .15s ease;
+}
+.data-grid th.sortable i {
+    margin-left: 6px;
+    font-size: .7rem;
+    color: var(--text-3);
+    transition: color .15s ease;
+}
+.data-grid th.sortable:hover { background: var(--bg-hover); color: var(--text); }
+.data-grid th.sortable:hover i { color: var(--text); }
+
+.dg-pager {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-soft);
+}
+.dg-page {
+    min-width: 32px;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    color: var(--text-2);
+    border-radius: 6px;
+    font-size: .78rem;
+    cursor: pointer;
+    transition: all .15s ease;
+}
+.dg-page:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text);
+    border-color: #333;
+}
+.dg-page.active {
+    background: var(--red);
+    border-color: var(--red);
+    color: #fff;
+}
+.dg-page:disabled { opacity: .35; cursor: not-allowed; }
+.dg-info {
+    margin-left: auto;
+    font-size: .74rem;
+    color: var(--text-3);
+}
+
+/* Light-theme tweaks */
+body.light .tx-card { background: #fff; border-color: #e3e3e3; }
+body.light .dg-page { background: #fff; border-color: #ddd; }
+body.light .dg-page:hover:not(:disabled) { background: #f5f5f5; }
