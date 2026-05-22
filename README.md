@@ -136,11 +136,3 @@ All requests are `POST` to `api.php` with an `action` parameter.
 
 ---
 
-## Academic Context
-
-| Field           | Details                          |
-|-----------------|----------------------------------|
-| Course          | Enterprise Development & Programming (EDP) |
-| Student         | Lumbis                           |
-| Academic Year   | 2025–2026                        |
-| Version         | 1.0.0                            |
